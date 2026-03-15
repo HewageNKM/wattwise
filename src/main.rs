@@ -31,6 +31,24 @@ fn set_turbo(state: State<AppState>, enabled: bool) -> Result<(), String> {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let is_daemon = args.iter().any(|arg| arg == "--daemon");
+
+    if is_daemon {
+        let monitor_mutex = Mutex::new(Monitor::new());
+        let power_manager = PowerManager::new();
+        println!("auto-cpufreq-rust daemon starting...");
+        
+        loop {
+            let metrics = {
+                let mut monitor = monitor_mutex.lock().unwrap();
+                monitor.get_metrics()
+            };
+            power_manager.handle_state_change(&metrics);
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
