@@ -1,3 +1,0 @@
-type = scripted
-command = /usr/local/bin/auto-cpufreq --daemon
-run-as = root

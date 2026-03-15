@@ -1,0 +1,20 @@
+[package]
+name = "auto-cpufreq-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tauri = { version = "2.0.0-beta", features = [ "tray-icon" ] }
+tauri-plugin-shell = "2.0.0-beta"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.30"
+procfs = "0.16"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+
+[build-dependencies]
+tauri-build = "2.0.0-beta"
