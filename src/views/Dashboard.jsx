@@ -83,6 +83,40 @@ export const Dashboard = ({ metrics }) => {
           </div>
           <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Total Energetic Consumption</div>
         </div>
+
+        <div className="stat-card">
+          <div className="label">Battery Health</div>
+          <div className="value" style={{ fontSize: '20px', color: metrics.battery_health > 80 ? 'var(--success)' : '#fb1' }}>
+            {metrics.battery_health ? `${metrics.battery_health.toFixed(1)}%` : "100.0%"}
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Lifespan Cycle Efficiency</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="label">Charge Cycles</div>
+          <div className="value" style={{ fontSize: '20px', color: '#00f2fe' }}>
+            {metrics.battery_cycles !== undefined && metrics.battery_cycles !== null ? metrics.battery_cycles : "0"}
+          </div>
+          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Total battery discharge loops</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="label">Peripheral Sub-States</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>USB Suspend</span>
+              <span style={{ color: metrics.config?.ac_profile?.usb_autosuspend ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 'bold' }}>
+                {metrics.config?.ac_profile?.usb_autosuspend ? 'AUTO' : 'OFF'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '4px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>SATA ALPM</span>
+              <span style={{ color: metrics.config?.ac_profile?.sata_alpm ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 'bold' }}>
+                {metrics.config?.ac_profile?.sata_alpm ? 'MED' : 'MAX'}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Proactive Mode Dashboard Banner */}
