@@ -37,7 +37,7 @@ fn main() {
     if is_daemon {
         let monitor_mutex = Mutex::new(Monitor::new());
         let power_manager = PowerManager::new();
-        println!("auto-cpufreq-rust daemon starting...");
+        println!("Zenith-Energy daemon starting...");
         
         loop {
             let metrics = {

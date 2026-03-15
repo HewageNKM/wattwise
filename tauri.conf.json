@@ -1,7 +1,7 @@
 {
-  "productName": "auto-cpufreq",
+  "productName": "Zenith-Energy",
   "version": "1.0.0",
-  "identifier": "com.autocpufreq.rust",
+  "identifier": "com.zenith.energy",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -35,12 +35,12 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "scripts/auto-cpufreq-rust.service"
+      "scripts/zenith-energy.service"
     ],
     "deb": {
       "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"],
       "files": {
-        "/usr/lib/systemd/system/auto-cpufreq-rust.service": "scripts/auto-cpufreq-rust.service"
+        "/usr/lib/systemd/system/zenith-energy.service": "scripts/zenith-energy.service"
       }
     }
   }

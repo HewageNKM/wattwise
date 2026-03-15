@@ -1,5 +1,5 @@
 [package]
-name = "auto-cpufreq-rust"
+name = "zenith-energy"
 version = "0.1.0"
 edition = "2024"
 

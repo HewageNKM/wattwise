@@ -1,10 +1,10 @@
-name: auto-cpufreq-rust
+name: zenith-energy
 base: core22
 version: '1.0.0'
-summary: High-performance Linux CPU optimizer
+summary: Zenith-Energy: Premium Linux CPU Optimizer
 description: |
-  A complete overhaul of auto-cpufreq in Rust and Tauri.
-  Provides macOS-level power management with a premium GUI.
+  A high-performance Linux power management suite built on auto-cpufreq.
+  Engineered with Rust and Tauri for maximum efficiency and a premium GUI.
 
 grade: stable
 confinement: strict
@@ -25,11 +25,11 @@ parts:
     override-build: |
       npm install
       npm run tauri build -- --bundles appimage
-      cp target/release/auto-cpufreq-rust $SNAPCRAFT_PART_INSTALL/bin/
+      cp target/release/zenith-energy $SNAPCRAFT_PART_INSTALL/bin/
 
 apps:
-  auto-cpufreq-rust:
-    command: bin/auto-cpufreq-rust
+  zenith-energy:
+    command: bin/zenith-energy
     plugs:
       - cpu-control
       - system-observe
@@ -40,7 +40,7 @@ apps:
       - wayland
       - unity7
   daemon:
-    command: bin/auto-cpufreq-rust --daemon
+    command: bin/zenith-energy --daemon
     daemon: simple
     plugs:
       - cpu-control

@@ -43,7 +43,7 @@ function App() {
   return (
     <div className="app-container">
       <header>
-        <h1>auto-cpufreq</h1>
+        <h1>Zenith-Energy</h1>
         <div className="nav">
           <button className={activeTab === "dashboard" ? "active" : "flat"} onClick={() => setActiveTab("dashboard")}>Dashboard</button>
           <button className={activeTab === "stats" ? "active" : "flat"} onClick={() => setActiveTab("stats")}>Analytics</button>

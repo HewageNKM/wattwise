@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# auto-cpufreq-rust release script
+# Zenith-Energy release script
 # Purpose: Build, Version, Checksum, and Reinstall
 
 RED='\033[0;31m'
@@ -9,7 +9,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}==> auto-cpufreq-rust Release Tool${NC}"
+echo -e "${BLUE}==> Zenith-Energy Release Tool${NC}"
 
 # 1. Versioning
 CURRENT_VERSION=$(grep -m 1 "version =" Cargo.toml | cut -d '"' -f 2)
@@ -34,7 +34,7 @@ echo -e "${BLUE}==> Building .deb package...${NC}"
 npm run tauri build -- --bundles deb
 
 # 4. SHA256 Checksum
-DEB_FILE="src-tauri/target/release/bundle/deb/auto-cpufreq_${VERSION}_amd64.deb"
+DEB_FILE="src-tauri/target/release/bundle/deb/zenith-energy_${VERSION}_amd64.deb"
 # Note: Tauri 2.0 might have different output paths, checking common locations
 if [ ! -f "$DEB_FILE" ]; then
     DEB_FILE=$(find target/release/bundle/deb/ -name "*.deb" | head -n 1)
@@ -56,6 +56,6 @@ sudo dpkg -i "$DEB_FILE"
 # 6. Enable Service
 echo -e "${BLUE}==> Setting up background daemon...${NC}"
 sudo systemctl daemon-reload
-sudo systemctl enable --now auto-cpufreq-rust.service
+sudo systemctl enable --now zenith-energy.service
 
-echo -e "${GREEN}SUCCESS: auto-cpufreq-rust ${VERSION} installed and running.${NC}"
+echo -e "${GREEN}SUCCESS: Zenith-Energy ${VERSION} installed and running.${NC}"

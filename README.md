@@ -1,9 +1,9 @@
-# auto-cpufreq-rust
+# Zenith-Energy
 
-A high-performance Linux CPU optimizer and power management tool, now built with **Rust** and **Tauri 2.0**.
+A premium, high-performance Linux power management suite, built on the foundations of **auto-cpufreq** and engineered with **Rust** and **Tauri 2.0**.
 
 ## Overview
-`auto-cpufreq-rust` is a complete overhaul of the original project, designed to provide macOS-level power management efficiency. It dynamically adjusts CPU frequency, governors, and turbo boost settings based on real-time metrics, load, and battery state.
+**Zenith-Energy** represents the next generation of Linux CPU optimization. While built on the solid bedrock of `auto-cpufreq`, it introduces a significant leap in performance and features, aiming for a professional "macOS-level" efficiency experience.
 
 ## Key Features
 - **Rust Engine**: Minimal resource footprint with direct, safe kernel interactions.

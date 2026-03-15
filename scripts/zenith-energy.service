@@ -1,5 +1,5 @@
 [Unit]
-Description=auto-cpufreq-rust daemon
+Description=Zenith-Energy daemon
 After=network.target
 
 [Service]

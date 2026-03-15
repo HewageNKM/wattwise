@@ -1,5 +1,5 @@
 {
-  description: "auto-cpufreq-rust: A high-performance Linux CPU optimizer in Rust/Tauri";
+  description = "Zenith-Energy: A high-performance Linux CPU optimizer in Rust/Tauri, built on auto-cpufreq";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -41,7 +41,7 @@
 
           shellHook = ''
             export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath buildInputs}:$LD_LIBRARY_PATH
-            echo "auto-cpufreq-rust dev environment ready"
+            echo "Zenith-Energy dev environment ready"
           '';
         };
       }
