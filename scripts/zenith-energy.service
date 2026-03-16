@@ -6,7 +6,7 @@ Before=power-profiles-daemon.service tlp.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/zenith-energy --daemon
+ExecStart=stdbuf -oL /usr/bin/zenith-energy --daemon
 Restart=always
 # Run as root to allow hardware sysfs writes
 User=root

@@ -128,7 +128,7 @@ body {
 }
 
 @media (max-width: 900px) {
-  .nav-links button span { display: none; }
+  .nav-links button span:last-child { display: none; }
   .nav-links button { justify-content: center; padding: 16px; }
 }
 

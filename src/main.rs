@@ -103,7 +103,12 @@ fn get_logs() -> Result<String, String> {
         .output()
         .map_err(|e| e.to_string())?;
     
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let content = String::from_utf8_lossy(&output.stdout).to_string();
+    if content.trim().is_empty() {
+        Ok("Operational records file is empty. Standby for daemon loop offsets...".to_string())
+    } else {
+        Ok(content)
+    }
 }
 
 static LOW_BATTERY_NOTIFIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
