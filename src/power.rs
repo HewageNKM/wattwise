@@ -54,15 +54,30 @@ pub struct PowerManager {
     rolling_load_avg: AtomicU32,
     adaptive_eco_threshold: AtomicU32,
     adaptive_balance_threshold: AtomicU32,
+    total_cores: usize,
 }
 
 impl PowerManager {
     pub fn new() -> Self {
+        let total_cores = {
+            let mut count = 0;
+            if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu") {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
+                        count += 1;
+                    }
+                }
+            }
+            if count == 0 { 4 } else { count }
+        };
+
         Self {
             prev_cpu_usage: AtomicU32::new(0_f32.to_bits()),
             rolling_load_avg: AtomicU32::new(0_f32.to_bits()),
             adaptive_eco_threshold: AtomicU32::new(10_f32.to_bits()),
             adaptive_balance_threshold: AtomicU32::new(40_f32.to_bits()),
+            total_cores,
         }
     }
 
@@ -70,10 +85,33 @@ impl PowerManager {
         if id == 0 { return Ok(()); } 
         let path = format!("/sys/devices/system/cpu/cpu{}/online", id);
         let val = if online { "1" } else { "0" };
+        
         if std::path::Path::new(&path).exists() {
-            self.write_sysfs(&path, val)
-        } else {
-            Ok(())
+            match self.write_sysfs_smart(&path, val) {
+                Ok(true) => {
+                    self.log_to_file(&format!("✅ Core {} set online={}", id, online));
+                    Ok(())
+                },
+                Ok(false) => Ok(()), // Already set
+                Err(_) => {
+                    // Fallback to tee if direct write fails
+                    let status = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("echo {} | tee \"{}\" > /dev/null", val, path))
+                        .status();
+                    
+                    if status.is_ok() && status.unwrap().success() {
+                        self.log_to_file(&format!("✅ Core {} set online={} (via tee)", id, online));
+                        Ok(())
+                    } else {
+                        let err = format!("Failed to write to {} (direct & tee)", path);
+                        self.log_to_file(&format!("❌ {}", err));
+                        Err(err)
+                    }
+                }
+            }
+        } else { 
+            Ok(()) 
         }
     }
 
@@ -90,7 +128,15 @@ impl PowerManager {
                                 None => true, // unpark all
                             };
                             if let Err(e) = self.set_core_online(id, online) {
-                                println!("Error setting core {} online={}: {}", id, online, e);
+                                if let Ok(mut file) = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .append(true)
+                                    .open("/etc/zenith-energy/zenith-energy.log") 
+                                {
+                                    use std::io::Write;
+                                    let _ = writeln!(file, "[{}] ❌ Core Parking Failed (Core {} online={}): {}", 
+                                        chrono::Local::now().format("%H:%M:%S"), id, online, e);
+                                }
                             }
                         }
                     }
@@ -128,34 +174,30 @@ impl PowerManager {
             .status();
     }
 
+    fn log_to_file(&self, message: &str) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/etc/zenith-energy/zenith-energy.log") 
+        {
+            use std::io::Write;
+            let _ = writeln!(file, "[{}] {}", chrono::Local::now().format("%H:%M:%S"), message);
+        }
+    }
+
     fn write_sysfs(&self, path: &str, value: &str) -> Result<(), String> {
         fs::write(path, value).map_err(|e| format!("Failed to write to {}: {}", path, e))
     }
 
-    fn write_to_all_cpus(&self, subpath: &str, value: &str) -> Result<(), String> {
-        let mut errors = Vec::new();
-        let cpu_dir = "/sys/devices/system/cpu";
-        
-        if let Ok(entries) = fs::read_dir(cpu_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
-                    let full_path = format!("{}/{}/{}", cpu_dir, name, subpath);
-                    if Path::new(&full_path).exists() {
-                        if let Err(e) = self.write_sysfs(&full_path, value) {
-                            errors.push(format!("{}: {}", name, e));
-                        }
-                    }
-                }
+    fn write_sysfs_smart(&self, path: &str, value: &str) -> Result<bool, String> {
+        if let Ok(current) = fs::read_to_string(path) {
+            if current.trim() == value {
+                return Ok(false); // No change needed
             }
         }
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.join("; "))
-        }
+        self.write_sysfs(path, value).map(|_| true)
     }
+
 
     pub fn apply_governor(&self, governor: Governor) -> Result<(), String> {
         let val = governor.as_str();
@@ -231,7 +273,12 @@ impl PowerManager {
                 } else {
                     if enabled { "0" } else { "1" }
                 };
-                let _ = self.write_sysfs(path, val);
+                
+                match self.write_sysfs_smart(path, val) {
+                    Ok(true) => self.log_to_file(&format!("✅ Turbo Boost set to {} ({})", enabled, path)),
+                    Ok(false) => {}, // No change
+                    Err(e) => self.log_to_file(&format!("❌ Failed to set Turbo Boost ({:?}): {}", path, e)),
+                }
             }
         }
         Ok(())
@@ -307,6 +354,15 @@ impl PowerManager {
         let battery_level = metrics.battery_level.unwrap_or(100.0);
         let is_charging = metrics.is_charging.unwrap_or(false);
 
+        // Continuous Proportional Core Parking
+        let unpark_count = if current_load < 15.0 {
+            2
+        } else {
+            let ratio = current_load / 100.0;
+            let computed = (self.total_cores as f32 * ratio).ceil() as usize;
+            computed.clamp(2, self.total_cores)
+        };
+
         // Always ensure battery threshold is set according to config
         let b = battery::get_vendor_battery();
         let _ = b.set_thresholds(0, config.battery_threshold);
@@ -320,8 +376,10 @@ impl PowerManager {
             config.bat_profile.clone()
         };
 
-        // 🟠 3. Apply Base settings
-        let _ = self.apply_governor_str(&profile.governor);
+        // 🟠 3. Apply Base settings (Only if manual override is active)
+        if config.manual_override.is_some() {
+            let _ = self.apply_governor_str(&profile.governor);
+        }
         let mut turbo = profile.turbo;
         
         if config.manual_override.is_some() {
@@ -336,8 +394,8 @@ impl PowerManager {
 
         // 🔴 4. Hardware-Accelerated continuous Autopilot Overlays
         if config.manual_override.is_none() {
-            // Safety Caps: Battery < 15% forces Eco regardless of tier
-            if !is_charging && battery_level <= 20.0 {
+            // Safety Caps: Battery < 10% forces Eco regardless of tier
+            if !is_charging && battery_level <= 10.0 {
                 if let Ok(mut file) = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -359,7 +417,11 @@ impl PowerManager {
                         let _ = self.apply_governor_str("powersave");
                         let _ = self.apply_epp(EnergyPreference::Power);
                         let _ = self.apply_epb(15);
-                        self.park_cores(Some(2));
+                        if is_charging || battery_level > 30.0 {
+                            self.park_cores(Some(unpark_count));
+                        } else {
+                            self.park_cores(None); // Avoid locking cores on low battery DC
+                        }
                         turbo = false;
 
                         // 📡 Advanced Peripheral Management
@@ -376,19 +438,29 @@ impl PowerManager {
                         let _ = self.apply_governor_str("powersave");
                         let _ = self.apply_epp(EnergyPreference::BalancePower);
                         let _ = self.apply_epb(8);
-                        self.park_cores(None); // Unpark All Cores in Balanced
+                        if is_charging || battery_level > 30.0 {
+                            self.park_cores(Some(unpark_count));
+                        } else {
+                            self.park_cores(None);
+                        }
+                        turbo = true;
                     },
                     Tier::Performance => {
                         let _ = self.apply_governor_str("performance");
                         let _ = self.apply_epp(EnergyPreference::BalancePerformance);
                         let _ = self.apply_epb(4);
-                        self.park_cores(None);
+                        if is_charging || battery_level > 30.0 {
+                            self.park_cores(Some(unpark_count));
+                        } else {
+                            self.park_cores(None);
+                        }
                         turbo = true;
                     },
-                    Tier::Extreme => {
+                        Tier::Extreme => {
                         let _ = self.apply_governor_str("performance");
                         let _ = self.apply_epp(EnergyPreference::Performance);
                         let _ = self.apply_epb(0);
+                        let _ = self.write_sysfs_smart("/sys/devices/system/cpu/intel_pstate/max_perf_pct", "100");
                         self.park_cores(None);
                         turbo = true;
 
@@ -416,12 +488,37 @@ impl PowerManager {
         }
     }
     pub fn apply_governor_str(&self, gov: &str) -> Result<(), String> {
-        let g = match gov {
-            "performance" => Governor::Performance,
-            "powersave" => Governor::Powersave,
-            "schedutil" => Governor::Schedutil,
-            _ => return Err("Invalid governor".to_string()),
+        self.write_to_all_cpus("cpufreq/scaling_governor", gov)
+    }
+
+    pub fn apply_governor(&self, gov: Governor) -> Result<(), String> {
+        let gov_str = match gov {
+            Governor::Performance => "performance",
+            Governor::Powersave => "powersave",
+            Governor::Schedutil => "schedutil",
         };
-        self.apply_governor(g)
+        
+        self.apply_governor_str(gov_str)
+    }
+
+    fn write_to_all_cpus(&self, subpath: &str, value: &str) -> Result<(), String> {
+        let mut errors = Vec::new();
+        let cpu_dir = "/sys/devices/system/cpu";
+        
+        if let Ok(entries) = fs::read_dir(cpu_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
+                    let full_path = format!("{}/{}/{}", cpu_dir, name, subpath);
+                    if Path::new(&full_path).exists() {
+                        if let Err(e) = self.write_sysfs_smart(&full_path, value) {
+                            errors.push(e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
     }
 }

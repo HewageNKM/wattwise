@@ -128,8 +128,8 @@ fn main() {
                 let mut monitor = monitor_mutex.lock().unwrap();
                 monitor.get_metrics()
             };
-            power_manager.handle_state_change(&metrics);
-            std::thread::sleep(std::time::Duration::from_secs(5));
+            let sleep_duration = power_manager.handle_state_change(&metrics);
+            std::thread::sleep(sleep_duration);
         }
     }
 
