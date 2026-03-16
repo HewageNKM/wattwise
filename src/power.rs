@@ -219,37 +219,22 @@ impl PowerManager {
     }
 
     pub fn set_turbo(&self, enabled: bool) -> Result<(), String> {
-        // Try native Intel first
-        let intel_path = "/sys/devices/system/cpu/intel_pstate/no_turbo";
-        let turbo_val = if enabled { "0" } else { "1" };
-        if Path::new(intel_path).exists() {
-            if self.write_sysfs(intel_path, turbo_val).is_ok() {
-                return Ok(());
+        let paths = [
+            "/sys/devices/system/cpu/intel_pstate/no_turbo",
+            "/sys/devices/system/cpu/cpufreq/boost"
+        ];
+        
+        for path in paths {
+            if std::path::Path::new(path).exists() {
+                let val = if path.contains("boost") {
+                    if enabled { "1" } else { "0" }
+                } else {
+                    if enabled { "0" } else { "1" }
+                };
+                let _ = self.write_sysfs(path, val);
             }
         }
-
-        // Try native AMD/Other
-        let boost_path = "/sys/devices/system/cpu/cpufreq/boost";
-        let boost_val = if enabled { "1" } else { "0" };
-        if Path::new(boost_path).exists() {
-            if self.write_sysfs(boost_path, boost_val).is_ok() {
-                return Ok(());
-            }
-        }
-
-        // Fallback
-        let cmd_val = if enabled { "0" } else { "1" };
-        let status = Command::new("zenith-ctl")
-            .arg("--no-turbo")
-            .arg(format!("--set={}", cmd_val))
-            .status()
-            .map_err(|e| e.to_string())?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err("Failed to set turbo mode".to_string())
-        }
+        Ok(())
     }
 
     pub fn handle_state_change(&self, metrics: &SystemMetrics) -> std::time::Duration {
@@ -353,6 +338,16 @@ impl PowerManager {
         if config.manual_override.is_none() {
             // Safety Caps: Battery < 15% forces Eco regardless of tier
             if !is_charging && battery_level <= 20.0 {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/etc/zenith-energy/zenith-energy.log") 
+                {
+                    use std::io::Write;
+                    let _ = writeln!(file, "[{}] 🛡️ SAFETY GUARD ACTIVE: Battery {:.1}% forcing Eco Tier conservation", 
+                        chrono::Local::now().format("%H:%M:%S"), battery_level);
+                }
+
                 let _ = self.apply_governor_str("powersave");
                 let _ = self.apply_epp(EnergyPreference::Power);
                 self.park_cores(Some(2));

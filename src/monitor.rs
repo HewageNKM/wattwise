@@ -90,21 +90,36 @@ impl Monitor {
 
         let core_temp = get_cpu_temp();
 
-        let cores: Vec<_> = self.sys.cpus().iter().enumerate().map(|(id, cpu)| {
-            let freq_path = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", id);
-            let freq = std::fs::read_to_string(&freq_path)
-                .ok()
-                .and_then(|s| s.trim().parse::<u64>().ok())
-                .map(|f| f / 1000)
-                .unwrap_or_else(|| cpu.frequency());
+        let mut cores = Vec::new();
+        if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu") {
+            let mut items: Vec<_> = entries.flatten().collect();
+            items.sort_by_key(|e| {
+                e.file_name().to_string_lossy()[3..].parse::<usize>().unwrap_or(0)
+            });
 
-            CpuCoreInfo {
-                id,
-                usage: cpu.cpu_usage(),
-                frequency: freq,
-                temperature: core_temp,
+            for entry in items {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
+                    if let Ok(id) = name[3..].parse::<usize>() {
+                        let freq_path = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", id);
+                        let freq = std::fs::read_to_string(&freq_path)
+                            .ok()
+                            .and_then(|s| s.trim().parse::<u64>().ok())
+                            .map(|f| f / 1000)
+                            .unwrap_or(0); // 0 means offline/parked
+
+                        let usage = self.sys.cpus().get(id).map(|c| c.cpu_usage()).unwrap_or(0.0);
+
+                        cores.push(CpuCoreInfo {
+                            id,
+                            usage,
+                            frequency: freq,
+                            temperature: core_temp,
+                        });
+                    }
+                }
             }
-        }).collect();
+        }
 
         let load = System::load_average();
 
