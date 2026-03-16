@@ -51,12 +51,14 @@ pub enum Tier {
 
 pub struct PowerManager {
     prev_cpu_usage: AtomicU32,
+    rolling_load_avg: AtomicU32,
 }
 
 impl PowerManager {
     pub fn new() -> Self {
         Self {
             prev_cpu_usage: AtomicU32::new(0_f32.to_bits()),
+            rolling_load_avg: AtomicU32::new(0_f32.to_bits()),
         }
     }
 
@@ -247,18 +249,25 @@ impl PowerManager {
     pub fn handle_state_change(&self, metrics: &SystemMetrics) -> std::time::Duration {
         let config = AppConfig::load();
         
-        // 1. Calculate Acceleration Derivative (Anti-Lag Butter)
+        // 1. Calculate Acceleration Derivative & EWMA (Machine Learning)
         let current_load = metrics.total_cpu_usage;
         let prev_bits = self.prev_cpu_usage.load(Ordering::Relaxed);
         let prev_load = f32::from_bits(prev_bits);
         let accel = current_load - prev_load;
         self.prev_cpu_usage.store(current_load.to_bits(), Ordering::Relaxed);
 
-        // 2. Determine Continuous Curve Tier (Autopilot Intelligence)
+        // EWMA calculation: rolling = alpha * current + (1 - alpha) * prev
+        let alpha = 0.25_f32; 
+        let hist_bits = self.rolling_load_avg.load(Ordering::Relaxed);
+        let prev_avg = f32::from_bits(hist_bits);
+        let rolling_avg = (alpha * current_load) + ((1.0 - alpha) * prev_avg);
+        self.rolling_load_avg.store(rolling_avg.to_bits(), Ordering::Relaxed);
+
+        // 2. Determine Continuous Curve Tier (Balanced by EWMA)
         let tier = match current_load {
-            l if l < 10.0 && accel < 3.0 => Tier::Eco,
-            l if l < 40.0 => Tier::Balanced,
-            l if l < 75.0 => Tier::Performance,
+            l if l < 10.0 && rolling_avg < 15.0 && accel < 3.0 => Tier::Eco,
+            l if l < 40.0 && rolling_avg < 45.0 => Tier::Balanced,
+            l if l < 75.0 || rolling_avg < 70.0 => Tier::Performance,
             _ => Tier::Extreme,
         };
 
@@ -289,10 +298,12 @@ impl PowerManager {
         let _ = self.apply_governor_str(&profile.governor);
         let mut turbo = profile.turbo;
         
-        if profile.core_parking {
-            self.park_cores(Some(2)); 
-        } else {
-            self.park_cores(None); 
+        if config.manual_override.is_some() {
+            if profile.core_parking {
+                self.park_cores(Some(2)); 
+            } else {
+                self.park_cores(None); 
+            }
         }
         self.set_usb_autosuspend(profile.usb_autosuspend);
         self.set_sata_alpm(profile.sata_alpm);
@@ -319,6 +330,7 @@ impl PowerManager {
                         let _ = self.apply_governor_str("powersave");
                         let _ = self.apply_epp(EnergyPreference::BalancePower);
                         let _ = self.apply_epb(8);
+                        self.park_cores(None); // Unpark All Cores in Balanced
                     },
                     Tier::Performance => {
                         let _ = self.apply_governor_str("performance");
