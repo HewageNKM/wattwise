@@ -1,13 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export const Core = ({ metrics, notify }) => {
-    const turboEnabled = metrics.config?.ac_profile?.turbo;
 
-    const setTurbo = (enabled) => {
-        invoke("set_turbo", { enabled })
-            .then(() => notify(`Turbo Boost ${enabled ? 'Unlocked' : 'Locked'}`))
-            .catch(console.error);
-    };
 
     return (
         <div className="page-layout">
@@ -43,24 +37,45 @@ export const Core = ({ metrics, notify }) => {
                     </div>
                 </div>
 
-                <div className="glass-card settings-group">
-                    <h3>Turbo Boost Intel/AMD</h3>
+                {/* 🔌 AC Profile Settings */}
+                <div className="glass-card settings-group" style={{marginTop: '20px'}}>
+                    <h3>🔌 AC Profile Settings</h3>
                     <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px'}}>
-                        Unlock the processor's capability to exceed its base clock frequency.
+                        Configure static behaviors when connected to a live charger securely node layout.
                     </p>
-                    <div className="action-row">
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>
+                        <div>
+                            <div style={{fontSize: '13px', fontWeight: '600'}}>Intel/AMD Turbo Boost</div>
+                            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Unlock full clock Potential on AC.</div>
+                        </div>
                         <button 
-                            className={turboEnabled === true ? "btn-primary" : "btn-secondary"} 
-                            onClick={() => setTurbo(true)}
-                        >Unlock Potential</button>
-                        <button 
-                            className={turboEnabled === false ? "btn-primary" : "btn-secondary"} 
-                            onClick={() => setTurbo(false)}
-                        >Lock Frequencies</button>
+                            className={metrics.config?.ac_profile?.turbo === true ? "btn-primary" : "btn-secondary"} 
+                            onClick={() => invoke("set_profile_turbo", { profile: "ac", enabled: !metrics.config?.ac_profile?.turbo })
+                                .then(() => notify(`AC Turbo ${!metrics.config?.ac_profile?.turbo ? 'Enabled' : 'Disabled'}`))
+                                .catch(console.error)}
+                            style={{padding: '6px 16px', fontSize: '12px'}}
+                        >{metrics.config?.ac_profile?.turbo === true ? "Enabled" : "Enable"}</button>
                     </div>
-                    {turboEnabled !== undefined && <p style={{fontSize: '10px', color: 'var(--success)', marginTop: '8px'}}>Manual Lock: {turboEnabled ? 'UNLOCKED' : 'LOCKED'}</p>}
-                    <div style={{marginTop: '12px', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '11px'}}>
-                        <strong>Advice:</strong> Disabling Turbo significantly reduces heat generation and can prevent thermal throttling during long operations.
+                </div>
+
+                {/* 🔋 Battery Profile Settings */}
+                <div className="glass-card settings-group" style={{marginTop: '20px'}}>
+                    <h3>🔋 Battery Profile Settings</h3>
+                    <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px'}}>
+                        Configure static behaviors when running on battery cells layout securely node.
+                    </p>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>
+                        <div>
+                            <div style={{fontSize: '13px', fontWeight: '600'}}>Intel/AMD Turbo Boost</div>
+                            <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Cap frequencies to preserve capacity.</div>
+                        </div>
+                        <button 
+                            className={metrics.config?.bat_profile?.turbo === true ? "btn-primary" : "btn-secondary"} 
+                            onClick={() => invoke("set_profile_turbo", { profile: "bat", enabled: !metrics.config?.bat_profile?.turbo })
+                                .then(() => notify(`Battery Turbo ${!metrics.config?.bat_profile?.turbo ? 'Enabled' : 'Disabled'}`))
+                                .catch(console.error)}
+                            style={{padding: '6px 16px', fontSize: '12px'}}
+                        >{metrics.config?.bat_profile?.turbo === true ? "Enabled" : "Enable"}</button>
                     </div>
                 </div>
 

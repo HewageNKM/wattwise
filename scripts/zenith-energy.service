@@ -1,6 +1,8 @@
 [Unit]
 Description=Zenith Energy daemon
 After=network.target
+Conflicts=power-profiles-daemon.service tlp.service
+Before=power-profiles-daemon.service tlp.service
 
 [Service]
 Type=simple

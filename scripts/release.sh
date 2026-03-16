@@ -62,6 +62,15 @@ sudo dpkg -i "$DEB_FILE"
 
 # 6. Enable Service
 echo -e "${BLUE}==> Setting up background daemon...${NC}"
+echo -e "${BLUE}==> Disabling conflicting power managers...${NC}"
+for svc in "power-profiles-daemon.service" "tlp.service"; do
+    if systemctl is-active --quiet "$svc"; then
+        echo -e "${YELLOW}Stopping and masking $svc...${NC}"
+        sudo systemctl stop "$svc" || true
+        sudo systemctl mask "$svc" || true
+    fi
+done
+
 sudo mkdir -p /etc/zenith-energy
 sudo chmod 777 /etc/zenith-energy
 sudo systemctl daemon-reload

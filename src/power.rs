@@ -230,7 +230,7 @@ impl PowerManager {
         }
     }
 
-    pub fn handle_state_change(&self, metrics: &SystemMetrics) {
+    pub fn handle_state_change(&self, metrics: &SystemMetrics) -> std::time::Duration {
         let config = AppConfig::load();
         
         // AI Proactive Ruleset: Detect active process category
@@ -240,6 +240,9 @@ impl PowerManager {
                 is_gaming = true;
             }
         }
+
+        let is_high_load = metrics.total_cpu_usage > 40.0;
+        let battery_level = metrics.battery_level.unwrap_or(100.0);
 
         // Always ensure battery threshold is set according to config
         let b = battery::get_vendor_battery();
@@ -259,17 +262,15 @@ impl PowerManager {
         let mut turbo = profile.turbo;
         
         if profile.core_parking {
-            self.park_cores(Some(2)); // Standard Core Parking
+            self.park_cores(Some(2)); 
         } else {
-            self.park_cores(None); // Unpark All
+            self.park_cores(None); 
         }
 
         self.set_usb_autosuspend(profile.usb_autosuspend);
         self.set_sata_alpm(profile.sata_alpm);
 
-        // 🔴 3. Dynamic Automated Overlays (Safeguards)
-        let battery_level = metrics.battery_level.unwrap_or(100.0);
-        
+        // 🔴 3. Dynamic Automated Overlays (Safeguards & Autopilot Intelligence)
         if !metrics.is_charging.unwrap_or(false) {
             // Emergency Power Saving below 15%
             if battery_level <= 15.0 {
@@ -282,13 +283,28 @@ impl PowerManager {
                 let _ = self.apply_governor_str("powersave");
                 let _ = self.apply_epp(EnergyPreference::BalancePower);
                 let _ = self.apply_epb(10);
+            } else if is_high_load && config.manual_override.is_none() {
+                // ⚡ Anti-Lag Burst Lift (Autopilot Intelligence Mode ONLY)
+                // Lift caps temporarily for high demands avoiding battery stutter
+                let _ = self.apply_governor_str("performance");
+                self.park_cores(None);
+                turbo = true;
             }
 
-            // Smart Gaming capping capping heat drainage
             if is_gaming && metrics.total_cpu_usage > 70.0 {
                 turbo = false; 
             }
         } else {
+             if config.manual_override.is_none() {
+                 if is_high_load {
+                     let _ = self.apply_governor_str("performance");
+                     turbo = true;
+                 } else {
+                     let _ = self.apply_governor_str("powersave");
+                     turbo = false; 
+                 }
+             }
+
              // Charge State Tuning overlays
              if profile.governor == "performance" {
                  let _ = self.apply_epp(EnergyPreference::Performance);
@@ -297,6 +313,13 @@ impl PowerManager {
         }
 
         let _ = self.set_turbo(turbo);
+
+        // 🔄 4. Return Adaptive Polling Cycle Time
+        if is_high_load || is_gaming {
+            std::time::Duration::from_secs(1)
+        } else {
+            std::time::Duration::from_secs(5)
+        }
     }
 
     pub fn apply_governor_str(&self, gov: &str) -> Result<(), String> {

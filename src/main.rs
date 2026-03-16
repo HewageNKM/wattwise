@@ -40,6 +40,19 @@ fn set_turbo(state: State<AppState>, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_profile_turbo(state: State<AppState>, profile: String, enabled: bool) -> Result<(), String> {
+    let mut config = AppConfig::load();
+    if profile == "ac" {
+        config.ac_profile.turbo = enabled;
+    } else {
+        config.bat_profile.turbo = enabled;
+    }
+    config.save()?;
+    let _ = state.power_manager.set_turbo(enabled);
+    Ok(())
+}
+
+#[tauri::command]
 fn set_battery_threshold(start: u8, stop: u8) -> Result<(), String> {
     let mut config = AppConfig::load();
     config.battery_threshold = stop;
@@ -129,14 +142,15 @@ fn main() {
             set_battery_threshold,
             set_usb_autosuspend,
             set_sata_alpm,
-            set_operation_mode
+            set_operation_mode,
+            set_profile_turbo
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
             // Background optimization loop
             std::thread::spawn(move || {
-                let interval = std::time::Duration::from_secs(5);
+                let mut interval = std::time::Duration::from_secs(5);
                 loop {
                     let metrics = {
                         let state: State<AppState> = app_handle.state();
@@ -145,7 +159,7 @@ fn main() {
                     };
                     
                     let state: State<AppState> = app_handle.state();
-                    state.power_manager.handle_state_change(&metrics);
+                    interval = state.power_manager.handle_state_change(&metrics);
 
                     // Desktop notification triggers
                     use std::process::Command;
