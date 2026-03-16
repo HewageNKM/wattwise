@@ -90,11 +90,18 @@ impl Monitor {
 
         let core_temp = get_cpu_temp();
 
-        let cores = self.sys.cpus().iter().enumerate().map(|(id, cpu)| {
+        let cores: Vec<_> = self.sys.cpus().iter().enumerate().map(|(id, cpu)| {
+            let freq_path = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", id);
+            let freq = std::fs::read_to_string(&freq_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .map(|f| f / 1000)
+                .unwrap_or_else(|| cpu.frequency());
+
             CpuCoreInfo {
                 id,
                 usage: cpu.cpu_usage(),
-                frequency: cpu.frequency(),
+                frequency: freq,
                 temperature: core_temp,
             }
         }).collect();

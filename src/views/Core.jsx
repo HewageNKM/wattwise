@@ -47,13 +47,15 @@ export const Core = ({ metrics, notify }) => {
                         <div>
                             <div style={{fontSize: '13px', fontWeight: '600'}}>Intel/AMD Turbo Boost</div>
                             <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Unlock full clock Potential on AC.</div>
+                            {!metrics.config?.manual_override && <div style={{fontSize: '10px', color: 'orange', marginTop: '4px'}}>🟠 Managed by Auto-Pilot</div>}
                         </div>
                         <button 
                             className={metrics.config?.ac_profile?.turbo === true ? "btn-primary" : "btn-secondary"} 
+                            disabled={!metrics.config?.manual_override}
                             onClick={() => invoke("set_profile_turbo", { profile: "ac", enabled: !metrics.config?.ac_profile?.turbo })
                                 .then(() => notify(`AC Turbo ${!metrics.config?.ac_profile?.turbo ? 'Enabled' : 'Disabled'}`))
                                 .catch(console.error)}
-                            style={{padding: '6px 16px', fontSize: '12px'}}
+                            style={{padding: '6px 16px', fontSize: '12px', opacity: !metrics.config?.manual_override ? 0.5 : 1}}
                         >{metrics.config?.ac_profile?.turbo === true ? "Enabled" : "Enable"}</button>
                     </div>
                 </div>
@@ -68,13 +70,15 @@ export const Core = ({ metrics, notify }) => {
                         <div>
                             <div style={{fontSize: '13px', fontWeight: '600'}}>Intel/AMD Turbo Boost</div>
                             <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Cap frequencies to preserve capacity.</div>
+                            {!metrics.config?.manual_override && <div style={{fontSize: '10px', color: 'orange', marginTop: '4px'}}>🟠 Managed by Auto-Pilot</div>}
                         </div>
                         <button 
                             className={metrics.config?.bat_profile?.turbo === true ? "btn-primary" : "btn-secondary"} 
+                            disabled={!metrics.config?.manual_override}
                             onClick={() => invoke("set_profile_turbo", { profile: "bat", enabled: !metrics.config?.bat_profile?.turbo })
                                 .then(() => notify(`Battery Turbo ${!metrics.config?.bat_profile?.turbo ? 'Enabled' : 'Disabled'}`))
                                 .catch(console.error)}
-                            style={{padding: '6px 16px', fontSize: '12px'}}
+                            style={{padding: '6px 16px', fontSize: '12px', opacity: !metrics.config?.manual_override ? 0.5 : 1}}
                         >{metrics.config?.bat_profile?.turbo === true ? "Enabled" : "Enable"}</button>
                     </div>
                 </div>
@@ -91,12 +95,12 @@ export const Core = ({ metrics, notify }) => {
                                 <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Power down idle USB ports to save wattage.</div>
                             </div>
                             <button 
-                                className={metrics.config?.usb_autosuspend === true ? "btn-primary" : "btn-secondary"} 
-                                onClick={() => invoke("set_usb_autosuspend", { enabled: !metrics.config?.usb_autosuspend })
-                                    .then(() => notify(`USB Autosuspend ${!metrics.config?.usb_autosuspend ? 'Enabled' : 'Disabled'}`))
+                                className={metrics.config?.ac_profile?.usb_autosuspend === true ? "btn-primary" : "btn-secondary"} 
+                                onClick={() => invoke("set_usb_autosuspend", { enabled: !metrics.config?.ac_profile?.usb_autosuspend })
+                                    .then(() => notify(`USB Autosuspend ${!metrics.config?.ac_profile?.usb_autosuspend ? 'Enabled' : 'Disabled'}`))
                                     .catch(console.error)}
                                 style={{padding: '6px 16px', fontSize: '12px'}}
-                            >{metrics.config?.usb_autosuspend === true ? "Enabled" : "Enable"}</button>
+                            >{metrics.config?.ac_profile?.usb_autosuspend === true ? "Enabled" : "Enable"}</button>
                         </div>
 
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>
@@ -105,12 +109,12 @@ export const Core = ({ metrics, notify }) => {
                                 <div style={{fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px'}}>Aggressive power states for SCSI/SATA storage links.</div>
                             </div>
                             <button 
-                                className={metrics.config?.sata_alpm === true ? "btn-primary" : "btn-secondary"} 
-                                onClick={() => invoke("set_sata_alpm", { enabled: !metrics.config?.sata_alpm })
-                                    .then(() => notify(`SATA ALPM ${!metrics.config?.sata_alpm ? 'Enabled' : 'Disabled'}`))
+                                className={metrics.config?.ac_profile?.sata_alpm === true ? "btn-primary" : "btn-secondary"} 
+                                onClick={() => invoke("set_sata_alpm", { enabled: !metrics.config?.ac_profile?.sata_alpm })
+                                    .then(() => notify(`SATA ALPM ${!metrics.config?.ac_profile?.sata_alpm ? 'Enabled' : 'Disabled'}`))
                                     .catch(console.error)}
                                 style={{padding: '6px 16px', fontSize: '12px'}}
-                            >{metrics.config?.sata_alpm === true ? "Enabled" : "Enable"}</button>
+                            >{metrics.config?.ac_profile?.sata_alpm === true ? "Enabled" : "Enable"}</button>
                         </div>
                     </div>
                 </div>

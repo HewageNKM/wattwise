@@ -52,6 +52,8 @@ pub enum Tier {
 pub struct PowerManager {
     prev_cpu_usage: AtomicU32,
     rolling_load_avg: AtomicU32,
+    adaptive_eco_threshold: AtomicU32,
+    adaptive_balance_threshold: AtomicU32,
 }
 
 impl PowerManager {
@@ -59,6 +61,8 @@ impl PowerManager {
         Self {
             prev_cpu_usage: AtomicU32::new(0_f32.to_bits()),
             rolling_load_avg: AtomicU32::new(0_f32.to_bits()),
+            adaptive_eco_threshold: AtomicU32::new(10_f32.to_bits()),
+            adaptive_balance_threshold: AtomicU32::new(40_f32.to_bits()),
         }
     }
 
@@ -265,10 +269,30 @@ impl PowerManager {
         let rolling_avg = (alpha * current_load) + ((1.0 - alpha) * prev_avg);
         self.rolling_load_avg.store(rolling_avg.to_bits(), Ordering::Relaxed);
 
+        // Lightweight Machine Learning (AIMD Adaptive Thresholds)
+        let eco_bits = self.adaptive_eco_threshold.load(Ordering::Relaxed);
+        let mut eco_thresh = f32::from_bits(eco_bits);
+
+        let bal_bits = self.adaptive_balance_threshold.load(Ordering::Relaxed);
+        let mut bal_thresh = f32::from_bits(bal_bits);
+
+        if accel.abs() < 1.5 && current_load < 30.0 {
+            // Stable node -> Incrementally raise thresholds (Additive Increase)
+            eco_thresh = (eco_thresh + 0.1).min(18.0); // Cap 18%
+            bal_thresh = (bal_thresh + 0.1).min(50.0); // Cap 50%
+        } else if accel > 4.0 {
+            // sudden workload spike -> Lower thresholds (Multiplicative Decrease)
+            eco_thresh = (eco_thresh * 0.85).max(7.0);  // Min 7%
+            bal_thresh = (bal_thresh * 0.90).max(30.0); // Min 30%
+        }
+
+        self.adaptive_eco_threshold.store(eco_thresh.to_bits(), Ordering::Relaxed);
+        self.adaptive_balance_threshold.store(bal_thresh.to_bits(), Ordering::Relaxed);
+
         // 2. Determine Continuous Curve Tier (Balanced by EWMA)
         let tier = match current_load {
-            l if l < 10.0 && rolling_avg < 15.0 && accel < 3.0 => Tier::Eco,
-            l if l < 40.0 && rolling_avg < 45.0 => Tier::Balanced,
+            l if l < eco_thresh && rolling_avg < (eco_thresh + 5.0) && accel < 3.0 => Tier::Eco,
+            l if l < bal_thresh && rolling_avg < (bal_thresh + 5.0) => Tier::Balanced,
             l if l < 75.0 && rolling_avg < 70.0 => Tier::Performance,
             _ => Tier::Extreme,
         };
@@ -342,6 +366,16 @@ impl PowerManager {
                         let _ = self.apply_epb(15);
                         self.park_cores(Some(2));
                         turbo = false;
+
+                        // 📡 Advanced Peripheral Management
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg("iw dev $(ip route show default | awk '{print $5}') set power_save on 2>/dev/null")
+                            .spawn();
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg("bluetoothctl info | grep -q 'Connected: yes' || rfkill block bluetooth 2>/dev/null")
+                            .spawn();
                     },
                     Tier::Balanced => {
                         let _ = self.apply_governor_str("powersave");
@@ -362,6 +396,16 @@ impl PowerManager {
                         let _ = self.apply_epb(0);
                         self.park_cores(None);
                         turbo = true;
+
+                        // 📡 Advanced Peripheral Management
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg("iw dev $(ip route show default | awk '{print $5}') set power_save off 2>/dev/null")
+                            .spawn();
+                        let _ = std::process::Command::new("rfkill")
+                            .arg("unblock")
+                            .arg("bluetooth")
+                            .spawn();
                     }
                 }
             }
