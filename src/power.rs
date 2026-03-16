@@ -41,6 +41,8 @@ impl Governor {
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use std::sync::Mutex;
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Tier {
     Eco,
@@ -55,6 +57,12 @@ pub struct PowerManager {
     adaptive_eco_threshold: AtomicU32,
     adaptive_balance_threshold: AtomicU32,
     total_cores: usize,
+    
+    current_tier: Mutex<Option<Tier>>,
+    current_usb_autosuspend: std::sync::atomic::AtomicBool,
+    current_sata_alpm: std::sync::atomic::AtomicBool,
+    current_unpark_count: std::sync::atomic::AtomicUsize,
+    current_turbo_failed: std::sync::atomic::AtomicBool,
 }
 
 impl PowerManager {
@@ -78,6 +86,11 @@ impl PowerManager {
             adaptive_eco_threshold: AtomicU32::new(10_f32.to_bits()),
             adaptive_balance_threshold: AtomicU32::new(40_f32.to_bits()),
             total_cores,
+            current_tier: Mutex::new(None),
+            current_usb_autosuspend: std::sync::atomic::AtomicBool::new(false),
+            current_sata_alpm: std::sync::atomic::AtomicBool::new(false),
+            current_unpark_count: std::sync::atomic::AtomicUsize::new(0),
+            current_turbo_failed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -159,19 +172,27 @@ impl PowerManager {
     }
 
     pub fn set_usb_autosuspend(&self, enabled: bool) {
+        if self.current_usb_autosuspend.swap(enabled, Ordering::SeqCst) == enabled {
+            return; // No change
+        }
         let val = if enabled { "auto" } else { "on" };
         let _ = std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("for d in /sys/bus/usb/devices/*/power/control; do echo {} > \"$d\" 2>/dev/null; done", val))
             .status();
+        self.log_to_file(&format!("🔌 USB Autosuspend: {}", if enabled { "Enabled (auto)" } else { "Disabled (on)" }));
     }
 
     pub fn set_sata_alpm(&self, enabled: bool) {
+        if self.current_sata_alpm.swap(enabled, Ordering::SeqCst) == enabled {
+            return; // No change
+        }
         let val = if enabled { "med_power_with_dipm" } else { "max_performance" };
         let _ = std::process::Command::new("sh")
             .arg("-c")
             .arg(format!("for d in /sys/class/scsi_host/host*/link_power_management_policy; do echo {} > \"$d\" 2>/dev/null; done", val))
             .status();
+        self.log_to_file(&format!("💽 SATA ALPM: {}", if enabled { "Enabled (med_power)" } else { "Disabled (max_perf)" }));
     }
 
     fn log_to_file(&self, message: &str) {
@@ -196,28 +217,6 @@ impl PowerManager {
             }
         }
         self.write_sysfs(path, value).map(|_| true)
-    }
-
-
-    pub fn apply_governor(&self, governor: Governor) -> Result<(), String> {
-        let val = governor.as_str();
-        // Try native first
-        if self.write_to_all_cpus("cpufreq/scaling_governor", val).is_ok() {
-            return Ok(());
-        }
-
-        // Fallback to cpufreqctl
-        let status = Command::new("zenith-ctl")
-            .arg("--governor")
-            .arg(format!("--set={}", val))
-            .status()
-            .map_err(|e| e.to_string())?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err("Failed to set governor".to_string())
-        }
     }
 
     pub fn apply_epp(&self, preference: EnergyPreference) -> Result<(), String> {
@@ -268,6 +267,10 @@ impl PowerManager {
         
         for path in paths {
             if std::path::Path::new(path).exists() {
+                if self.current_turbo_failed.load(Ordering::Relaxed) {
+                    continue; // Skip repeatedly writing if previously failed (Permission Denied)
+                }
+
                 let val = if path.contains("boost") {
                     if enabled { "1" } else { "0" }
                 } else {
@@ -277,11 +280,27 @@ impl PowerManager {
                 match self.write_sysfs_smart(path, val) {
                     Ok(true) => self.log_to_file(&format!("✅ Turbo Boost set to {} ({})", enabled, path)),
                     Ok(false) => {}, // No change
-                    Err(e) => self.log_to_file(&format!("❌ Failed to set Turbo Boost ({:?}): {}", path, e)),
+                    Err(e) => {
+                        self.log_to_file(&format!("❌ Failed to set Turbo Boost ({:?}): {}", path, e));
+                        if e.contains("Permission denied") {
+                            self.current_turbo_failed.store(true, Ordering::Relaxed);
+                        }
+                    }
                 }
             }
         }
         Ok(())
+    }
+
+    fn calculate_staircase_state(&self, load: f32) -> (usize, bool) {
+        match load {
+            l if l < 15.0 => (2, false),                   // Stage 1: 2 cores, Base
+            l if l < 30.0 => (2, true),                    // Stage 2: 2 cores, Turbo
+            l if l < 50.0 => (4.min(self.total_cores), false), // Stage 3: 4 cores, Base
+            l if l < 70.0 => (4.min(self.total_cores), true),  // Stage 4: 4 cores, Turbo
+            l if l < 85.0 => (self.total_cores, false),    // Stage 5: All cores, Base
+            _ => (self.total_cores, true),                  // Stage 6: All cores, Turbo
+        }
     }
 
     pub fn handle_state_change(&self, metrics: &SystemMetrics) -> std::time::Duration {
@@ -295,7 +314,7 @@ impl PowerManager {
         self.prev_cpu_usage.store(current_load.to_bits(), Ordering::Relaxed);
 
         // EWMA calculation: rolling = alpha * current + (1 - alpha) * prev
-        let alpha = 0.25_f32; 
+        let alpha = 0.12_f32; // Lowered to 0.12 to increase resistance against 1-2 second spikes
         let hist_bits = self.rolling_load_avg.load(Ordering::Relaxed);
         let prev_avg = f32::from_bits(hist_bits);
         let rolling_avg = (alpha * current_load) + ((1.0 - alpha) * prev_avg);
@@ -321,13 +340,32 @@ impl PowerManager {
         self.adaptive_eco_threshold.store(eco_thresh.to_bits(), Ordering::Relaxed);
         self.adaptive_balance_threshold.store(bal_thresh.to_bits(), Ordering::Relaxed);
 
-        // 2. Determine Continuous Curve Tier (Balanced by EWMA)
-        let tier = match current_load {
-            l if l < eco_thresh && rolling_avg < (eco_thresh + 5.0) && accel < 3.0 => Tier::Eco,
-            l if l < bal_thresh && rolling_avg < (bal_thresh + 5.0) => Tier::Balanced,
-            l if l < 75.0 && rolling_avg < 70.0 => Tier::Performance,
-            _ => Tier::Extreme,
+        let battery_level = metrics.battery_level.unwrap_or(100.0);
+        let is_charging = metrics.is_charging.unwrap_or(false);
+
+        // 2. Determine Continuous Curve Tier (Fixed feedback loop via rolling_avg)
+        let mut tier = if is_charging {
+            Tier::Extreme // 🔌 AC Power: Unrestricted maximum performance
+        } else {
+            match rolling_avg {
+                l if l < eco_thresh && accel < 3.0 => Tier::Eco,
+                l if l < bal_thresh => Tier::Balanced,
+                l if l < 75.0 => Tier::Performance,
+                _ => Tier::Extreme,
+            }
         };
+
+        // 🌡️ 3. Thermal Safety Guard (Anti-Freeze override)
+        let cpu_temp = metrics.cpu_temperature.unwrap_or(0.0);
+        if cpu_temp > 85.0 {
+            tier = Tier::Eco;
+            self.log_to_file(&format!("⚠️ Thermal Throttle Engaged: {:.1}°C - Forcing Eco", cpu_temp));
+            // Force disable turbo when thermal throttling is active
+            if let Ok(mut current) = std::fs::OpenOptions::new().append(true).open("/etc/zenith-energy/zenith-energy.log") {
+                use std::io::Write;
+                let _ = writeln!(current, "[{}] ⚠️ Thermal Safety Throttle Overriding to Eco", chrono::Local::now().format("%H:%M:%S"));
+            }
+        }
 
         if let Ok(metadata) = std::fs::metadata("/etc/zenith-energy/zenith-energy.log") {
             if metadata.len() > 200_000 {
@@ -351,17 +389,11 @@ impl PowerManager {
             }
         }
 
-        let battery_level = metrics.battery_level.unwrap_or(100.0);
-        let is_charging = metrics.is_charging.unwrap_or(false);
+        // (Variables moved to top)
 
-        // Continuous Proportional Core Parking
-        let unpark_count = if current_load < 15.0 {
-            2
-        } else {
-            let ratio = current_load / 100.0;
-            let computed = (self.total_cores as f32 * ratio).ceil() as usize;
-            computed.clamp(2, self.total_cores)
-        };
+        // Staircase Scaling State (Dampened by EWMA to prevent jitter)
+        let (staircase_cores, staircase_turbo) = self.calculate_staircase_state(rolling_avg);
+        let unpark_count = staircase_cores;
 
         // Always ensure battery threshold is set according to config
         let b = battery::get_vendor_battery();
@@ -394,86 +426,105 @@ impl PowerManager {
 
         // 🔴 4. Hardware-Accelerated continuous Autopilot Overlays
         if config.manual_override.is_none() {
+            let mut current_tier_lock = self.current_tier.lock().unwrap();
+            let tier_changed = current_tier_lock.map_or(true, |t| t != tier);
+            
+            let prev_unpark = self.current_unpark_count.load(Ordering::Relaxed);
+            let unpark_changed = prev_unpark != unpark_count;
+
             // Safety Caps: Battery < 10% forces Eco regardless of tier
             if !is_charging && battery_level <= 10.0 {
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("/etc/zenith-energy/zenith-energy.log") 
-                {
-                    use std::io::Write;
-                    let _ = writeln!(file, "[{}] 🛡️ SAFETY GUARD ACTIVE: Battery {:.1}% forcing Eco Tier conservation", 
-                        chrono::Local::now().format("%H:%M:%S"), battery_level);
+                if tier_changed {
+                    self.log_to_file(&format!("🛡️ SAFETY GUARD ACTIVE: Battery {:.1}% forcing Eco Tier", battery_level));
+                    let _ = self.apply_governor_str("powersave");
+                    let _ = self.apply_epp(EnergyPreference::Power);
+                    self.park_cores(Some(2));
+                    self.current_unpark_count.store(2, Ordering::Relaxed);
+                    *current_tier_lock = Some(Tier::Eco);
                 }
-
-                let _ = self.apply_governor_str("powersave");
-                let _ = self.apply_epp(EnergyPreference::Power);
-                self.park_cores(Some(2));
                 turbo = false;
             } else {
-                // Apply Continuous Curve (Hardware EPP overrides software Governor lags)
-                match tier {
-                    Tier::Eco => {
-                        let _ = self.apply_governor_str("powersave");
-                        let _ = self.apply_epp(EnergyPreference::Power);
-                        let _ = self.apply_epb(15);
-                        if is_charging || battery_level > 30.0 {
-                            self.park_cores(Some(unpark_count));
-                        } else {
-                            self.park_cores(None); // Avoid locking cores on low battery DC
-                        }
-                        turbo = false;
+                if tier_changed {
+                    self.log_to_file(&format!("🚀 Autopilot Transition: {:?} -> {:?}", *current_tier_lock, tier));
+                    
+                    // 🔔 Desktop Notification
+                    let msg = match tier {
+                        Tier::Eco => "🔋 Eco Mode Engaged - Battery Saver",
+                        Tier::Balanced => "🟡 Balanced Mode Active",
+                        Tier::Performance => "🔴 Performance Mode Active",
+                        Tier::Extreme => "⚡ Extreme Mode Active - Full Boost",
+                    };
+                    let _ = std::process::Command::new("notify-send")
+                        .arg("Zenith Energy")
+                        .arg(msg)
+                        .spawn();
 
-                        // 📡 Advanced Peripheral Management
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg("iw dev $(ip route show default | awk '{print $5}') set power_save on 2>/dev/null")
-                            .spawn();
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg("bluetoothctl info | grep -q 'Connected: yes' || rfkill block bluetooth 2>/dev/null")
-                            .spawn();
-                    },
-                    Tier::Balanced => {
-                        let _ = self.apply_governor_str("powersave");
-                        let _ = self.apply_epp(EnergyPreference::BalancePower);
-                        let _ = self.apply_epb(8);
-                        if is_charging || battery_level > 30.0 {
-                            self.park_cores(Some(unpark_count));
-                        } else {
-                            self.park_cores(None);
-                        }
-                        turbo = true;
-                    },
-                    Tier::Performance => {
-                        let _ = self.apply_governor_str("performance");
-                        let _ = self.apply_epp(EnergyPreference::BalancePerformance);
-                        let _ = self.apply_epb(4);
-                        if is_charging || battery_level > 30.0 {
-                            self.park_cores(Some(unpark_count));
-                        } else {
-                            self.park_cores(None);
-                        }
-                        turbo = true;
-                    },
+                    match tier {
+                        Tier::Eco => {
+                            let _ = self.apply_governor_str("powersave");
+                            let _ = self.apply_epp(EnergyPreference::Power);
+                            let _ = self.apply_epb(15);
+                            
+                            // 📡 Advanced Peripheral Management
+                            let _ = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg("iw dev $(ip route show default | awk '{print $5}') set power_save on 2>/dev/null")
+                                .spawn();
+                            let _ = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg("bluetoothctl info | grep -q 'Connected: yes' || rfkill block bluetooth 2>/dev/null")
+                                .spawn();
+                        },
+                        Tier::Balanced => {
+                            let _ = self.apply_governor_str("powersave");
+                            let _ = self.apply_epp(EnergyPreference::BalancePower);
+                            let _ = self.apply_epb(8);
+                        },
+                        Tier::Performance => {
+                            let _ = self.apply_governor_str("performance");
+                            let _ = self.apply_epp(EnergyPreference::BalancePerformance);
+                            let _ = self.apply_epb(4);
+                        },
                         Tier::Extreme => {
-                        let _ = self.apply_governor_str("performance");
-                        let _ = self.apply_epp(EnergyPreference::Performance);
-                        let _ = self.apply_epb(0);
-                        let _ = self.write_sysfs_smart("/sys/devices/system/cpu/intel_pstate/max_perf_pct", "100");
-                        self.park_cores(None);
-                        turbo = true;
+                            let _ = self.apply_governor_str("performance");
+                            let _ = self.apply_epp(EnergyPreference::Performance);
+                            let _ = self.apply_epb(0);
+                            let _ = self.write_sysfs_smart("/sys/devices/system/cpu/intel_pstate/max_perf_pct", "100");
+                            self.park_cores(None);
+                            self.current_unpark_count.store(self.total_cores, Ordering::Relaxed);
 
-                        // 📡 Advanced Peripheral Management
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg("iw dev $(ip route show default | awk '{print $5}') set power_save off 2>/dev/null")
-                            .spawn();
-                        let _ = std::process::Command::new("rfkill")
-                            .arg("unblock")
-                            .arg("bluetooth")
-                            .spawn();
+                            // 📡 Advanced Peripheral Management
+                            let _ = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg("iw dev $(ip route show default | awk '{print $5}') set power_save off 2>/dev/null")
+                                .spawn();
+                            let _ = std::process::Command::new("rfkill")
+                                .arg("unblock")
+                                .arg("bluetooth")
+                                .spawn();
+                        },
                     }
+                    *current_tier_lock = Some(tier);
+                }
+                
+                // Situational Core Allocation (Allocate resources for max perf/eff regardless of tier change)
+                if tier != Tier::Extreme {
+                    if unpark_changed {
+                        if is_charging || battery_level > 30.0 {
+                            self.park_cores(Some(unpark_count));
+                        } else {
+                            self.park_cores(None);
+                        }
+                        self.current_unpark_count.store(unpark_count, Ordering::Relaxed);
+                    }
+                }
+                
+                // Turbo state is driven by the staircase logic on demand
+                turbo = staircase_turbo;
+                
+                // Safety restriction: Eco tier NEVER gets turbo regardless of staircase
+                if tier == Tier::Eco {
+                    turbo = false;
                 }
             }
         }

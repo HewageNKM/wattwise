@@ -84,7 +84,7 @@ fn set_sata_alpm(state: State<AppState>, enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_operation_mode(state: State<AppState>, mode: String) -> Result<(), String> {
+fn set_operation_mode(_state: State<AppState>, mode: String) -> Result<(), String> {
     let mut config = AppConfig::load();
     if mode == "auto" {
         config.manual_override = None;
