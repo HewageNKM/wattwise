@@ -1,11 +1,12 @@
 export const Dashboard = ({ metrics }) => {
-  const cpuLoad = metrics.total_cpu_usage;
-  const cpuTemp = metrics.cpu_temperature;
+  const cpuLoad = isNaN(metrics.total_cpu_usage) ? 0 : metrics.total_cpu_usage;
+  const cpuTemp = metrics.cpu_temperature !== undefined && metrics.cpu_temperature !== null && !isNaN(metrics.cpu_temperature) 
+    ? metrics.cpu_temperature 
+    : 0;
   const strokeDash = 251.2; // 2 * pi * r (40)
 
   const loadOffset = strokeDash - (cpuLoad / 100) * strokeDash;
   const tempOffset = strokeDash - ((cpuTemp || 40) / 100) * strokeDash;
-
   const formatUptime = (sec) => {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
@@ -73,28 +74,27 @@ export const Dashboard = ({ metrics }) => {
         </div>
 
         <div className="stat-card">
-          <div className="label">Active Power Mode</div>
+          <div className="label">Active Power Tier</div>
           <div className="value" style={{ fontSize: '20px', color: 'var(--brand-accent)', textTransform: 'capitalize' }}>
-            {metrics.config?.operation_mode || "Auto"} Engine
+            {metrics.daemon_tier ? metrics.daemon_tier.replace('Tier::', '') : (metrics.config?.operation_mode || "Auto")}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px', padding: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Active Cores</span>
-              {/* Count how many cores are currently unparked (freq > 0) */}
               <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>
-                {metrics.cores.filter(c => c.frequency > 0).length} / {metrics.cores.length} Online
+                {metrics.daemon_unpark_count !== undefined && metrics.daemon_unpark_count !== null ? metrics.daemon_unpark_count : metrics.cores.filter(c => c.frequency > 0).length} / {metrics.cores.length} Online
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Turbo State</span>
-              <span style={{ color: metrics.config?.operation_mode === "efficiency" ? 'var(--text-secondary)' : 'var(--success)', fontWeight: '600' }}>
-                {metrics.config?.operation_mode === "efficiency" ? 'DISABLED' : 'DYNAMIC'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Load Scaling</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Max Perform Cap</span>
               <span style={{ color: 'var(--success)', fontWeight: '600' }}>
-                PREDICTIVE
+                {metrics.daemon_max_perf_pct !== undefined && metrics.daemon_max_perf_pct !== null ? `${metrics.daemon_max_perf_pct}%` : 'DYNAMIC'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Energy Engine</span>
+              <span style={{ color: 'var(--success)', fontWeight: '600' }}>
+                CONTINUOUS
               </span>
             </div>
           </div>

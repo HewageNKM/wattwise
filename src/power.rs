@@ -31,6 +31,14 @@ impl EnergyPreference {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Tier {
+    Eco,
+    Balanced,
+    Performance,
+    Extreme,
+}
+
 impl Governor {
     pub fn as_str(&self) -> &str {
         match self {
@@ -231,168 +239,136 @@ impl PowerManager {
     }
 
     /// The Pure EMA Staircase Engine
-    fn calculate_dynamic_state(
-        &self, 
-        rolling_avg: f32, 
-        _accel: f32, // Ignored: Pure EMA prevents hotplug anomalies
-        battery_level: f32, 
-        is_charging: bool, 
-        mode: &str
-    ) -> (usize, bool) {
-        if mode == "performance" {
-            return (self.total_cores, true); 
-        }
-
-        let max_stage = (self.total_cores.saturating_sub(2)) * 2 + 1;
-        let mut current_stage = self.current_stage.load(Ordering::Relaxed);
-
-        // 1. EVALUATE THE EMA (Exponential Moving Average)
-        let critical_upper = 90.0;
-        let upper_bound = 70.0;
-        let lower_bound = 25.0;
-
-        if rolling_avg > critical_upper {
-            // Massive sustained load -> Jump 2 stages (e.g., add Core + Turbo instantly)
-            current_stage = current_stage.saturating_add(2).min(max_stage);
-        } else if rolling_avg > upper_bound {
-            // High sustained load -> Climb 1 stage
-            current_stage = current_stage.saturating_add(1).min(max_stage);
-        } else if rolling_avg < lower_bound {
-            // Idle load -> Descend 1 stage gracefully
-            current_stage = current_stage.saturating_sub(1);
-        }
-        // Between 25.0 and 70.0 is the Deadband. The stage remains perfectly locked.
-
-        // 2. APPLY MODE CONSTRAINTS
-        let mut active_max_stage = max_stage;
-        if mode == "auto" && !is_charging && battery_level < 20.0 {
-            // Cap at 75% hardware, Turbo OFF
-            let max_cores_capped = (self.total_cores as f32 * 0.75).ceil() as usize;
-            active_max_stage = (max_cores_capped.saturating_sub(2)) * 2; 
+    fn calculate_fluid_state(&self, load: f32, is_charging: bool, battery_level: f32) -> (usize, u32) {
+        let ratio = load / 100.0;
+        let mut cores = (self.total_cores as f32 * ratio).ceil() as usize;
+        
+        if !is_charging && battery_level < 50.0 {
+            let battery_factor = battery_level / 50.0; 
+            cores = (cores as f32 * battery_factor).ceil() as usize;
         }
         
-        if mode == "efficiency" {
-            // Force Turbo OFF for all core counts (Stages must be even numbers)
-            if current_stage % 2 != 0 {
-                current_stage = current_stage.saturating_sub(1);
-            }
-        }
-
-        current_stage = current_stage.min(active_max_stage);
+        let unpark_count = cores.clamp(2, self.total_cores);
+        let base_ceiling = 35.0; 
+        let scale_factor = 1.6; 
         
-        // Save the step we are currently resting on
-        self.current_stage.store(current_stage, Ordering::Relaxed);
+        let mut ceiling = base_ceiling + (load / scale_factor); 
+        if ceiling.is_nan() {
+            ceiling = base_ceiling;
+        }
+        let max_perf_pct = ceiling.clamp(base_ceiling, 100.0) as u32;
 
-        // 3. TRANSLATE STAGE TO HARDWARE INSTRUCTIONS
-        // Stage 0 -> 2 Cores, Turbo OFF
-        // Stage 1 -> 2 Cores, Turbo ON
-        // Stage 2 -> 3 Cores, Turbo OFF
-        // Stage 3 -> 3 Cores, Turbo ON ...
-        let target_cores = 2 + (current_stage / 2);
-        let turbo = (current_stage % 2) != 0;
-
-        (target_cores, turbo)
+        (unpark_count, max_perf_pct)
     }
 
     pub fn handle_state_change(&self, metrics: &SystemMetrics) -> std::time::Duration {
         let config = AppConfig::load();
+        let battery_level = metrics.battery_level.unwrap_or(100.0);
+        let is_charging = metrics.is_charging.unwrap_or(false);
         
+        // 1. Calculate Acceleration Derivative & EWMA
         let current_load = metrics.total_cpu_usage;
-        let prev_bits = self.prev_cpu_usage.load(Ordering::Relaxed);
-        let prev_load = f32::from_bits(prev_bits);
-        let accel = current_load - prev_load;
-        self.prev_cpu_usage.store(current_load.to_bits(), Ordering::Relaxed);
+        let prev_bits = self.prev_cpu_usage.swap(current_load.to_bits(), Ordering::Relaxed);
+        let accel = current_load - f32::from_bits(prev_bits);
 
-        let alpha = 0.15_f32; 
-        let hist_bits = self.rolling_load_avg.load(Ordering::Relaxed);
-        let prev_avg = f32::from_bits(hist_bits);
+        let alpha = 0.12_f32; 
+        let prev_avg = f32::from_bits(self.rolling_load_avg.load(Ordering::Relaxed));
         let rolling_avg = (alpha * current_load) + ((1.0 - alpha) * prev_avg);
         self.rolling_load_avg.store(rolling_avg.to_bits(), Ordering::Relaxed);
 
-        let battery_level = metrics.battery_level.unwrap_or(100.0);
-        let is_charging = metrics.is_charging.unwrap_or(false);
+        // Adaptive Thresholds
+        let mut eco_thresh = 15.0;
+        let mut bal_thresh = 50.0;
+
+        // 2. Determine Continuous Curve Tier (Symmetrical)
+        let mut tier = match rolling_avg {
+            l if l < eco_thresh && accel < 3.0 => Tier::Eco,
+            l if l < bal_thresh => Tier::Balanced,
+            l if l < 75.0 => Tier::Performance,
+            _ => Tier::Extreme,
+        };
+
+        // 🌡️ 3. Thermal & Safety Guards
         let cpu_temp = metrics.cpu_temperature.unwrap_or(0.0);
-
-        let mut active_mode = config.operation_mode.clone();
-
-        if cpu_temp > 95.0 {
-            active_mode = "efficiency".to_string();
-            self.log_to_file(&format!("⚠️ Thermal Throttle: {:.1}°C - Forcing Efficiency", cpu_temp));
-        } else if !is_charging && battery_level <= 10.0 {
-            active_mode = "efficiency".to_string();
-            self.log_to_file(&format!("🛡️ Battery Critical: {:.1}% - Forcing Efficiency", battery_level));
+        if cpu_temp > 85.0 {
+            tier = Tier::Eco;
+            self.log_to_file(&format!("⚠️ Thermal Throttle: {:.1}°C - Forcing Eco", cpu_temp));
+        } else if !is_charging && battery_level <= 15.0 {
+            tier = Tier::Eco;
         }
 
-        let (target_cores, target_turbo) = self.calculate_dynamic_state(
-            rolling_avg, 
-            accel, 
-            battery_level, 
-            is_charging, 
-            &active_mode
+        self.log_to_file(&format!("Autopilot: Load={:.1}%, Accel={:.1}, Rolling={:.1}% | Tier={:?}", 
+            current_load, accel, rolling_avg, tier));
+
+        // 5. Continuous Scaling State
+        let (unpark_count, max_perf_pct) = self.calculate_fluid_state(rolling_avg, is_charging, battery_level);
+        let perf_str = max_perf_pct.to_string();
+        let _ = self.write_sysfs_smart("/sys/devices/system/cpu/intel_pstate/max_perf_pct", &perf_str);
+        
+        let turbo = max_perf_pct >= 88 && tier != Tier::Eco;
+        let _ = self.set_turbo(turbo);
+
+        // Write Shared State Frame Node triggers
+        let state_json = format!(
+            "{{\"unpark_count\": {}, \"max_perf_pct\": {}, \"tier\": \"{:?}\"}}",
+            unpark_count, max_perf_pct, tier
         );
+        let _ = std::fs::write("/run/zenith-energy.state", state_json);
 
-        let _ = self.set_turbo(target_turbo);
-
-        let current_unparked = self.current_unpark_count.load(Ordering::Relaxed);
-        if target_cores != current_unparked {
-            self.park_cores(Some(target_cores));
-            self.current_unpark_count.store(target_cores, Ordering::Relaxed);
-            
-            // Log the Stage shift for easy debugging
-            let current_stage = self.current_stage.load(Ordering::Relaxed);
-            self.log_to_file(&format!("Staircase Step [{}]: {} Cores, Turbo {} (EMA: {:.1}%)", 
-                current_stage, target_cores, if target_turbo { "ON" } else { "OFF" }, rolling_avg));
-        }
-
+        // 6. Apply Autopilot Hardware States
         let mut current_mode_lock = self.current_mode.lock().unwrap();
-        if *current_mode_lock != active_mode {
-            self.log_to_file(&format!("🚀 Engine Intent Transition: {} -> {}", *current_mode_lock, active_mode));
-            *current_mode_lock = active_mode.clone();
+        let active_mode = match tier {
+            Tier::Eco => "eco",
+            Tier::Balanced => "balanced",
+            Tier::Performance => "performance",
+            Tier::Extreme => "extreme",
+        }.to_string();
 
-            match active_mode.as_str() {
-                "performance" => {
-                    let _ = self.apply_governor_str("performance");
-                    let _ = self.apply_epp(EnergyPreference::Performance);
-                    let _ = self.apply_epb(0);
-                    let _ = self.write_sysfs_smart("/sys/devices/system/cpu/intel_pstate/max_perf_pct", "100");
-                    
-                    let _ = std::process::Command::new("sh").arg("-c").arg("iw dev $(ip route show default | awk '{print $5}') set power_save off 2>/dev/null").spawn();
-                    let _ = std::process::Command::new("rfkill").arg("unblock").arg("bluetooth").spawn();
-                },
-                "efficiency" => {
+        if *current_mode_lock != active_mode {
+            self.log_to_file(&format!("🚀 Transition: {} -> {}", *current_mode_lock, active_mode));
+            *current_mode_lock = active_mode.clone();
+            
+            match tier {
+                Tier::Eco => {
                     let _ = self.apply_governor_str("powersave");
                     let _ = self.apply_epp(EnergyPreference::Power);
                     let _ = self.apply_epb(15);
-                    
-                    let _ = std::process::Command::new("sh").arg("-c").arg("iw dev $(ip route show default | awk '{print $5}') set power_save on 2>/dev/null").spawn();
-                    let _ = std::process::Command::new("sh").arg("-c").arg("bluetoothctl info | grep -q 'Connected: yes' || rfkill block bluetooth 2>/dev/null").spawn();
                 },
-                _ => {} 
+                Tier::Balanced => {
+                    let _ = self.apply_governor_str("powersave");
+                    let _ = self.apply_epp(EnergyPreference::BalancePower);
+                    let _ = self.apply_epb(8);
+                },
+                Tier::Performance => {
+                    let _ = self.apply_governor_str("performance");
+                    let _ = self.apply_epp(EnergyPreference::BalancePerformance);
+                    let _ = self.apply_epb(4);
+                },
+                Tier::Extreme => {
+                    let _ = self.apply_governor_str("performance");
+                    let _ = self.apply_epp(EnergyPreference::Performance);
+                    let _ = self.apply_epb(0);
+                },
             }
         }
 
-        if active_mode == "auto" {
-            if rolling_avg > 60.0 {
-                let _ = self.apply_governor_str("performance");
-                let _ = self.apply_epp(EnergyPreference::BalancePerformance);
-                let _ = self.apply_epb(4);
-            } else {
-                let _ = self.apply_governor_str("powersave");
-                let _ = self.apply_epp(EnergyPreference::BalancePower);
-                let _ = self.apply_epb(8);
-            }
-        }
+        let prev_unpark = self.current_unpark_count.load(Ordering::Relaxed);
 
-        self.set_usb_autosuspend(config.usb_autosuspend);
-        self.set_sata_alpm(config.sata_alpm);
-
-        let b = battery::get_vendor_battery();
-        let _ = b.set_thresholds(0, config.battery_threshold);
-
-        if active_mode == "performance" || rolling_avg > 40.0 {
-            std::time::Duration::from_secs(1) 
+        if accel.abs() > 55.0 {
+            self.log_to_file("⏳ Skipping Core Parking due to reading instability spike.");
+        } else if unpark_count < prev_unpark && current_load > 65.0 {
+            self.log_to_file("⏳ Skipping Core Parking due to high instantaneous load.");
         } else {
-            std::time::Duration::from_secs(3) 
+            self.park_cores(Some(unpark_count));
+            self.current_unpark_count.store(unpark_count, Ordering::Relaxed);
+        }
+
+        let is_gaming = false;
+
+        if tier == Tier::Performance || tier == Tier::Extreme || is_gaming {
+            std::time::Duration::from_secs(1)
+        } else {
+            std::time::Duration::from_secs(5)
         }
     }
 

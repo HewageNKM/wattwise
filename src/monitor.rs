@@ -41,6 +41,9 @@ pub struct SystemMetrics {
     pub battery_discharge_rate: Option<f32>,
     pub top_processes: Vec<ProcessInfo>,
     pub config: AppConfig,
+    pub daemon_unpark_count: Option<u32>,
+    pub daemon_max_perf_pct: Option<u32>,
+    pub daemon_tier: Option<String>,
 }
 
 fn get_cpu_temp() -> Option<f32> {
@@ -178,6 +181,18 @@ impl Monitor {
         procs.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap_or(std::cmp::Ordering::Equal));
         let top_processes = procs.into_iter().take(4).collect::<Vec<_>>();
 
+        let mut daemon_unpark_count = None;
+        let mut daemon_max_perf_pct = None;
+        let mut daemon_tier = None;
+
+        if let Ok(state_str) = std::fs::read_to_string("/run/zenith-energy.state") {
+            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&state_str) {
+                daemon_unpark_count = json_val.get("unpark_count").and_then(|v| v.as_u64()).map(|v| v as u32);
+                daemon_max_perf_pct = json_val.get("max_perf_pct").and_then(|v| v.as_u64()).map(|v| v as u32);
+                daemon_tier = json_val.get("tier").and_then(|v| v.as_str()).map(|s| s.to_string());
+            }
+        }
+
         SystemMetrics {
             total_cpu_usage: self.sys.global_cpu_info().cpu_usage(),
             cores,
@@ -200,6 +215,9 @@ impl Monitor {
             battery_discharge_rate: discharge_rate,
             top_processes,
             config: AppConfig::load(),
+            daemon_unpark_count,
+            daemon_max_perf_pct,
+            daemon_tier,
         }
     }
 }

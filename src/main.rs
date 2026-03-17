@@ -11,7 +11,10 @@ struct AppState {
 
 #[tauri::command]
 fn get_metrics(state: State<AppState>) -> Result<monitor::SystemMetrics, String> {
-    let mut monitor = state.monitor.lock().map_err(|e: std::sync::PoisonError<_>| e.to_string())?;
+    let mut monitor = match state.monitor.lock() {
+        Ok(guard) => guard,
+        Err(poison) => poison.into_inner(),
+    };
     Ok(monitor.get_metrics())
 }
 
