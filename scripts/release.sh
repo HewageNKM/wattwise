@@ -63,7 +63,7 @@ sudo dpkg -i "$DEB_FILE"
 # 6. Enable Service
 echo -e "${BLUE}==> Setting up background daemon...${NC}"
 echo -e "${BLUE}==> Disabling conflicting power managers...${NC}"
-for svc in "power-profiles-daemon.service" "tlp.service"; do
+for svc in "power-profiles-daemon.service" "tlp.service" "thermald.service"; do
     if systemctl is-active --quiet "$svc"; then
         echo -e "${YELLOW}Stopping and masking $svc...${NC}"
         sudo systemctl stop "$svc" || true

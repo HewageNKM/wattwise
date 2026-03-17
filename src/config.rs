@@ -3,41 +3,20 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PowerProfile {
-    pub governor: String,
-    pub turbo: bool,
-    pub core_parking: bool,
+pub struct AppConfig {
+    pub operation_mode: String, // "auto", "performance", "efficiency"
+    pub battery_threshold: u8,
     pub usb_autosuspend: bool,
     pub sata_alpm: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AppConfig {
-    pub ac_profile: PowerProfile,
-    pub bat_profile: PowerProfile,
-    pub manual_override: Option<String>, // "performance", "efficiency", None (Auto)
-    pub battery_threshold: u8,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            ac_profile: PowerProfile {
-                governor: "performance".to_string(),
-                turbo: true,
-                core_parking: false,
-                usb_autosuspend: false,
-                sata_alpm: false,
-            },
-            bat_profile: PowerProfile {
-                governor: "powersave".to_string(),
-                turbo: false,
-                core_parking: true,
-                usb_autosuspend: true,
-                sata_alpm: true,
-            },
-            manual_override: None,
+            operation_mode: "auto".to_string(),
             battery_threshold: 80,
+            usb_autosuspend: true, // Safe default for Linux
+            sata_alpm: true,       // Safe default for Linux
         }
     }
 }

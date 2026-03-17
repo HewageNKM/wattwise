@@ -1,5 +1,5 @@
 use zenith_energy::monitor::{self, Monitor};
-use zenith_energy::power::{PowerManager, Governor};
+use zenith_energy::power::PowerManager;
 use zenith_energy::config::AppConfig;
 use std::sync::Mutex;
 use tauri::{Manager, State, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent}};
@@ -16,43 +16,6 @@ fn get_metrics(state: State<AppState>) -> Result<monitor::SystemMetrics, String>
 }
 
 #[tauri::command]
-fn set_governor(state: State<AppState>, governor: String) -> Result<(), String> {
-    let mut config = AppConfig::load();
-    config.manual_override = Some(governor.clone());
-    config.save()?;
-    
-    let gov = match governor.as_str() {
-        "performance" => Governor::Performance,
-        "powersave" => Governor::Powersave,
-        "schedutil" => Governor::Schedutil,
-        _ => return Err("Invalid governor".to_string()),
-    };
-    state.power_manager.apply_governor(gov)
-}
-
-#[tauri::command]
-fn set_turbo(state: State<AppState>, enabled: bool) -> Result<(), String> {
-    let mut config = AppConfig::load();
-    config.ac_profile.turbo = enabled;
-    config.bat_profile.turbo = enabled;
-    config.save()?;
-    state.power_manager.set_turbo(enabled)
-}
-
-#[tauri::command]
-fn set_profile_turbo(state: State<AppState>, profile: String, enabled: bool) -> Result<(), String> {
-    let mut config = AppConfig::load();
-    if profile == "ac" {
-        config.ac_profile.turbo = enabled;
-    } else {
-        config.bat_profile.turbo = enabled;
-    }
-    config.save()?;
-    let _ = state.power_manager.set_turbo(enabled);
-    Ok(())
-}
-
-#[tauri::command]
 fn set_battery_threshold(start: u8, stop: u8) -> Result<(), String> {
     let mut config = AppConfig::load();
     config.battery_threshold = stop;
@@ -66,8 +29,7 @@ fn set_battery_threshold(start: u8, stop: u8) -> Result<(), String> {
 #[tauri::command]
 fn set_usb_autosuspend(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut config = AppConfig::load();
-    config.ac_profile.usb_autosuspend = enabled;
-    config.bat_profile.usb_autosuspend = enabled;
+    config.usb_autosuspend = enabled;
     config.save()?;
     state.power_manager.set_usb_autosuspend(enabled);
     Ok(())
@@ -76,8 +38,7 @@ fn set_usb_autosuspend(state: State<AppState>, enabled: bool) -> Result<(), Stri
 #[tauri::command]
 fn set_sata_alpm(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let mut config = AppConfig::load();
-    config.ac_profile.sata_alpm = enabled;
-    config.bat_profile.sata_alpm = enabled;
+    config.sata_alpm = enabled;
     config.save()?;
     state.power_manager.set_sata_alpm(enabled);
     Ok(())
@@ -86,11 +47,7 @@ fn set_sata_alpm(state: State<AppState>, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 fn set_operation_mode(_state: State<AppState>, mode: String) -> Result<(), String> {
     let mut config = AppConfig::load();
-    if mode == "auto" {
-        config.manual_override = None;
-    } else {
-        config.manual_override = Some(mode.clone());
-    }
+    config.operation_mode = mode;
     config.save()?;
     Ok(())
 }
@@ -99,7 +56,8 @@ fn set_operation_mode(_state: State<AppState>, mode: String) -> Result<(), Strin
 fn get_logs() -> Result<String, String> {
     use std::process::Command;
     let output = Command::new("tail")
-        .args(["-n", "100", "/etc/zenith-energy/zenith-energy.log"])
+        // UPDATED: Pointing to /var/log/
+        .args(["-n", "100", "/var/log/zenith-energy.log"])
         .output()
         .map_err(|e| e.to_string())?;
     
@@ -141,14 +99,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_metrics,
-            set_governor,
-            set_turbo,
             get_logs,
             set_battery_threshold,
             set_usb_autosuspend,
             set_sata_alpm,
-            set_operation_mode,
-            set_profile_turbo
+            set_operation_mode
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -171,8 +126,9 @@ fn main() {
                     if let (Some(lvl), Some(false)) = (metrics.battery_level, metrics.is_charging) {
                         if lvl <= 15.0 {
                             if !LOW_BATTERY_NOTIFIED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                                let _ = Command::new("notify-send")
-                                    .args(["Zenith Energy", "Critical Battery (≤15%): Core Parking Activated!"])
+                                let _ = Command::new("sh")
+                                    .arg("-c")
+                                    .arg("for u in $(who | awk '{print $1}'); do sudo -u $u DISPLAY=:0 notify-send 'Zenith Energy' 'Critical Battery (≤15%): Forcing Efficiency Mode!' 2>/dev/null; done")
                                     .status();
                             }
                         } else if lvl > 20.0 {
@@ -183,8 +139,9 @@ fn main() {
                     if let Some(temp) = metrics.cpu_temperature {
                         if temp >= 85.0 {
                             if !HIGH_TEMP_NOTIFIED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                                let _ = Command::new("notify-send")
-                                    .args(["Zenith Energy", "High Thermal State: Adaptive scaling reducing boost limits."])
+                                let _ = Command::new("sh")
+                                    .arg("-c")
+                                    .arg("for u in $(who | awk '{print $1}'); do sudo -u $u DISPLAY=:0 notify-send 'Zenith Energy' 'High Thermal State: Adaptive scaling forcing efficiency.' 2>/dev/null; done")
                                     .status();
                             }
                         } else if temp < 75.0 {
@@ -199,7 +156,7 @@ fn main() {
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Show app", true, None::<&str>)?;
             let perf_i = MenuItem::with_id(app, "perf", "Performance Mode", true, None::<&str>)?;
-            let save_i = MenuItem::with_id(app, "save", "Powersave Mode", true, None::<&str>)?;
+            let save_i = MenuItem::with_id(app, "save", "Efficiency Mode", true, None::<&str>)?;
             
             let menu = Menu::with_items(app, &[&perf_i, &save_i, &show_i, &quit_i])?;
 
@@ -220,17 +177,13 @@ fn main() {
                         }
                         "perf" => {
                             let mut config = AppConfig::load();
-                            config.manual_override = Some("performance".to_string());
+                            config.operation_mode = "performance".to_string();
                             let _ = config.save();
-                            let state: State<AppState> = app.state();
-                            let _ = state.power_manager.apply_governor_str("performance");
                         }
                         "save" => {
                             let mut config = AppConfig::load();
-                            config.manual_override = Some("efficiency".to_string());
+                            config.operation_mode = "efficiency".to_string();
                             let _ = config.save();
-                            let state: State<AppState> = app.state();
-                            let _ = state.power_manager.apply_governor_str("powersave");
                         }
                         _ => {}
                     }

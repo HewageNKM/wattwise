@@ -1,17 +1,22 @@
 [Unit]
-Description=Zenith Energy daemon
-After=network.target
-Conflicts=power-profiles-daemon.service tlp.service
-Before=power-profiles-daemon.service tlp.service
+Description=Zenith Energy Dynamic Power Daemon
+After=network.target multi-user.target
+Conflicts=power-profiles-daemon.service tlp.service thermald.service
+Before=power-profiles-daemon.service tlp.service thermald.service
 
 [Service]
 Type=simple
 ExecStart=stdbuf -oL /usr/bin/zenith-energy --daemon
 Restart=always
+RestartSec=3
+
 # Run as root to allow hardware sysfs writes
 User=root
 StandardOutput=append:/var/log/zenith-energy.log
 StandardError=append:/var/log/zenith-energy.log
+
+# Protect the engine from the Linux OOM Killer during high RAM usage
+OOMScoreAdjust=-500
 
 [Install]
 WantedBy=multi-user.target

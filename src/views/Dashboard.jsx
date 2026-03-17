@@ -2,7 +2,7 @@ export const Dashboard = ({ metrics }) => {
   const cpuLoad = metrics.total_cpu_usage;
   const cpuTemp = metrics.cpu_temperature;
   const strokeDash = 251.2; // 2 * pi * r (40)
-  
+
   const loadOffset = strokeDash - (cpuLoad / 100) * strokeDash;
   const tempOffset = strokeDash - ((cpuTemp || 40) / 100) * strokeDash;
 
@@ -12,24 +12,24 @@ export const Dashboard = ({ metrics }) => {
     return `${h}h ${m}m`;
   };
 
-  const activeProfile = metrics.config?.manual_override 
+  const activeProfile = metrics.config?.manual_override
     ? (metrics.config.manual_override === "performance" ? metrics.config.ac_profile : metrics.config.bat_profile)
     : (metrics.is_charging ? metrics.config?.ac_profile : metrics.config?.bat_profile);
 
   return (
     <div className="dashboard-layout" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Diagnostics Roll-up */}
-      <div className="metrics-grid" style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
-        gap: '20px' 
+      <div className="metrics-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '20px'
       }}>
         {/* CPU Load Gauge */}
         <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: '16px', position: 'relative' }}>
           <div style={{ position: 'relative', width: '60px', height: '60px' }}>
             <svg width="60" height="60" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="50" cy="50" r="40" stroke="var(--border)" strokeWidth="8" fill="transparent" />
-              <circle cx="50" cy="50" r="40" stroke="var(--brand-accent)" strokeWidth="8" fill="transparent" 
+              <circle cx="50" cy="50" r="40" stroke="var(--brand-accent)" strokeWidth="8" fill="transparent"
                 strokeDasharray={strokeDash} strokeDashoffset={loadOffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
             </svg>
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '12px', fontWeight: '800' }}>
@@ -47,7 +47,7 @@ export const Dashboard = ({ metrics }) => {
           <div style={{ position: 'relative', width: '60px', height: '60px' }}>
             <svg width="60" height="60" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="50" cy="50" r="40" stroke="var(--border)" strokeWidth="8" fill="transparent" />
-              <circle cx="50" cy="50" r="40" stroke="#ff4757" strokeWidth="8" fill="transparent" 
+              <circle cx="50" cy="50" r="40" stroke="#ff4757" strokeWidth="8" fill="transparent"
                 strokeDasharray={strokeDash} strokeDashoffset={tempOffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
             </svg>
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '11px', fontWeight: '800' }}>
@@ -75,23 +75,26 @@ export const Dashboard = ({ metrics }) => {
         <div className="stat-card">
           <div className="label">Active Power Mode</div>
           <div className="value" style={{ fontSize: '20px', color: 'var(--brand-accent)', textTransform: 'capitalize' }}>
-            {metrics.config?.manual_override ? metrics.config.manual_override : "Auto-Pilot (AI)"}
+            {metrics.config?.operation_mode || "Auto"} Engine
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px', padding: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Governor</span>
-              <span style={{ fontWeight: '600', color: 'var(--text-main)', textTransform: 'capitalize' }}>{activeProfile?.governor || "Checking..."}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Turbo Boost</span>
-              <span style={{ color: activeProfile?.turbo ? 'var(--success)' : '#fb1', fontWeight: '600' }}>
-                {activeProfile?.turbo ? 'ON' : 'OFF'}
+              <span style={{ color: 'var(--text-secondary)' }}>Active Cores</span>
+              {/* Count how many cores are currently unparked (freq > 0) */}
+              <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>
+                {metrics.cores.filter(c => c.frequency > 0).length} / {metrics.cores.length} Online
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Core Parking</span>
-              <span style={{ color: activeProfile?.core_parking ? 'var(--success)' : 'var(--text-secondary)', fontWeight: '600' }}>
-                {activeProfile?.core_parking ? 'AUTO' : 'OFF'}
+              <span style={{ color: 'var(--text-secondary)' }}>Turbo State</span>
+              <span style={{ color: metrics.config?.operation_mode === "efficiency" ? 'var(--text-secondary)' : 'var(--success)', fontWeight: '600' }}>
+                {metrics.config?.operation_mode === "efficiency" ? 'DISABLED' : 'DYNAMIC'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Load Scaling</span>
+              <span style={{ color: 'var(--success)', fontWeight: '600' }}>
+                PREDICTIVE
               </span>
             </div>
           </div>
@@ -141,7 +144,7 @@ export const Dashboard = ({ metrics }) => {
       </div>
 
       {/* Proactive Mode Dashboard Banner */}
-      <div className="glass-card" style={{ 
+      <div className="glass-card" style={{
         background: 'linear-gradient(135deg, rgba(0, 112, 243, 0.1), rgba(0, 255, 136, 0.05))',
         border: '1px solid var(--brand-accent)',
         borderRadius: '16px',
@@ -164,16 +167,16 @@ export const Dashboard = ({ metrics }) => {
       {/* Grid Expansion for Cores */}
       <div className="glass-card">
         <div className="label" style={{ marginBottom: '16px' }}>Core Micro-Architecture Frequency Distribution ({metrics.cores.length} Cores)</div>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', 
-          gap: '12px' 
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+          gap: '12px'
         }}>
           {metrics.cores.map((core) => (
-            <div key={core.id} style={{ 
-              background: 'rgba(255, 255, 255, 0.02)', 
-              border: '1px solid var(--border)', 
-              borderRadius: '12px', 
+            <div key={core.id} style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
               padding: '12px',
               display: 'flex',
               flexDirection: 'column',
@@ -182,10 +185,10 @@ export const Dashboard = ({ metrics }) => {
               <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Core {core.id}</div>
               <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--brand-accent)' }}>{core.frequency} <span style={{ fontSize: '10px', fontWeight: '400', color: 'var(--text-secondary)' }}>MHz</span></div>
               <div style={{ width: '100%', height: '3px', background: 'var(--border)', borderRadius: '2px', marginTop: '4px' }}>
-                <div style={{ 
-                  height: '100%', 
-                  width: `${Math.min(100, (core.frequency / 5000) * 100)}%`, 
-                  background: 'var(--brand-accent)', 
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, (core.frequency / 5000) * 100)}%`,
+                  background: 'var(--brand-accent)',
                   borderRadius: '2px',
                   transition: 'width 0.3s ease'
                 }}></div>
