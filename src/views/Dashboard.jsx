@@ -93,14 +93,15 @@ export const Dashboard = ({ metrics }) => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Max Perform Cap</span>
-              <span style={{ color: 'var(--success)', fontWeight: '600' }}>
-                {metrics.daemon_max_perf_pct !== undefined && metrics.daemon_max_perf_pct !== null ? `${metrics.daemon_max_perf_pct}%` : 'DYNAMIC'}
+              <span style={{ color: metrics.config?.operation_mode === 'efficiency' ? '#fb1' : 'var(--success)', fontWeight: '600' }}>
+                {metrics.config?.operation_mode === 'efficiency' ? '50% (ECO)' : 
+                 metrics.config?.operation_mode === 'performance' ? '100% (MAX)' : 'DYNAMIC'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Energy Engine</span>
-              <span style={{ color: 'var(--success)', fontWeight: '600' }}>
-                CONTINUOUS
+              <span style={{ color: metrics.config?.operation_mode === 'auto' || !metrics.config?.operation_mode ? 'var(--brand-accent)' : 'var(--success)', fontWeight: '600' }}>
+                {metrics.config?.operation_mode === 'auto' || !metrics.config?.operation_mode ? 'AUTOPILOT' : 'STATIC PROFILE'}
               </span>
             </div>
           </div>
