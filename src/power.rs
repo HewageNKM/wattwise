@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 const LOW_LOAD_THRESHOLD_TICKS: usize = 12; 
 const THERMAL_CUTOFF_CELSIUS: f32 = 72.0; 
 const CORE_MINIMUM: usize = 2;              
-const TURBO_SUSTAIN_SEC: u64 = 5;           
+const TURBO_SUSTAIN_SEC: u64 = 15;           
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tier { Eco, Balanced, Performance, Extreme }
@@ -20,6 +20,7 @@ pub struct PowerManager {
     last_park_event: Mutex<Instant>,
     last_high_load: Mutex<Instant>, 
     low_load_ticks: AtomicUsize,
+    high_load_ticks: AtomicUsize,
     current_unpark_count: AtomicUsize,
     prev_usb_state: std::sync::atomic::AtomicBool,
     prev_sata_state: std::sync::atomic::AtomicBool,
@@ -44,6 +45,7 @@ impl PowerManager {
             last_park_event: Mutex::new(Instant::now()),
             last_high_load: Mutex::new(Instant::now()),
             low_load_ticks: AtomicUsize::new(0),
+            high_load_ticks: AtomicUsize::new(0),
             current_unpark_count: AtomicUsize::new(cores),
             prev_usb_state: std::sync::atomic::AtomicBool::new(false),
             prev_sata_state: std::sync::atomic::AtomicBool::new(false),
@@ -128,9 +130,14 @@ impl PowerManager {
         let mut final_core_target = current_unparked;
         
         if ideal_clamped > current_unparked {
-            final_core_target = ideal_clamped;
+            let ticks = self.high_load_ticks.fetch_add(1, Ordering::Relaxed);
+            if ticks >= 1 { // Wait for 1 sustained tick (1s dampening)
+                final_core_target = ideal_clamped;
+                self.high_load_ticks.store(0, Ordering::Relaxed);
+            }
             self.low_load_ticks.store(0, Ordering::Relaxed);
         } else if ideal_clamped < current_unparked {
+            self.high_load_ticks.store(0, Ordering::Relaxed);
             let ticks = self.low_load_ticks.fetch_add(1, Ordering::Relaxed);
             if ticks >= LOW_LOAD_THRESHOLD_TICKS {
                 final_core_target = ideal_clamped;
@@ -205,7 +212,7 @@ impl PowerManager {
             Tier::Balanced => {
                 let _ = self.write_to_all_possible("cpufreq/scaling_governor", "powersave");
                 let _ = self.write_to_all_possible("cpufreq/energy_performance_preference", "balance_power");
-                let _ = self.set_turbo_dynamic(true);
+                let _ = self.set_turbo_dynamic(false);
             },
             Tier::Performance => {
                 let _ = self.write_to_all_possible("cpufreq/scaling_governor", "performance");
