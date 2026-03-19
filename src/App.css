@@ -11,6 +11,11 @@
   --border: rgba(255, 255, 255, 0.1);
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --thermal-hot: #ff4757;
+  --energy-amber: #fb1;
+  --frequency-cyan: #00f2fe;
 }
 
 @media (prefers-color-scheme: light) {
@@ -79,7 +84,9 @@ body {
   margin-bottom: 40px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
+  height: 48px;
 }
 
 @media (max-width: 900px) {
@@ -186,6 +193,64 @@ header {
   background: var(--bg-color);
   border: 1px solid var(--border);
   border-radius: 16px;
+  transition: var(--transition);
+}
+
+.stat-card:hover {
+  border-color: var(--brand-accent);
+  background: var(--brand-muted);
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1100px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pulse-card {
+  background: linear-gradient(135deg, rgba(8, 8, 8, 0.8), rgba(0, 0, 0, 0.9));
+  border: 1px solid var(--brand-accent);
+  position: relative;
+  overflow: hidden;
+}
+
+.pulse-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--brand-accent), transparent);
+  animation: scan-line 3s infinite linear;
+}
+
+@keyframes scan-line {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.group-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
 }
 
 .label {
@@ -200,6 +265,40 @@ header {
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -0.03em;
+}
+
+/* Standardized Data Tables */
+.vitals-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.vitals-table th {
+  text-align: left;
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.vitals-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.vitals-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.status-pill {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 /* Logs Page */

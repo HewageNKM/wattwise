@@ -1,198 +1,172 @@
+import React from 'react';
+
 export const Dashboard = ({ metrics }) => {
   const cpuLoad = isNaN(metrics.total_cpu_usage) ? 0 : metrics.total_cpu_usage;
   const cpuTemp = metrics.cpu_temperature !== undefined && metrics.cpu_temperature !== null && !isNaN(metrics.cpu_temperature) 
     ? metrics.cpu_temperature 
     : 0;
-  const strokeDash = 251.2; // 2 * pi * r (40)
+  const strokeDash = 251.2;
 
   const loadOffset = strokeDash - (cpuLoad / 100) * strokeDash;
   const tempOffset = strokeDash - ((cpuTemp || 40) / 100) * strokeDash;
+
   const formatUptime = (sec) => {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
-    return `${h}h ${m}m`;
+    return \`\${h}h \${m}m\`;
   };
-
-  const activeProfile = metrics.config?.manual_override
-    ? (metrics.config.manual_override === "performance" ? metrics.config.ac_profile : metrics.config.bat_profile)
-    : (metrics.is_charging ? metrics.config?.ac_profile : metrics.config?.bat_profile);
 
   return (
     <div className="dashboard-layout" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Top Diagnostics Roll-up */}
-      <div className="metrics-grid" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '20px'
-      }}>
-        {/* CPU Load Gauge */}
-        <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: '16px', position: 'relative' }}>
-          <div style={{ position: 'relative', width: '60px', height: '60px' }}>
-            <svg width="60" height="60" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="50" cy="50" r="40" stroke="var(--border)" strokeWidth="8" fill="transparent" />
-              <circle cx="50" cy="50" r="40" stroke="var(--brand-accent)" strokeWidth="8" fill="transparent"
-                strokeDasharray={strokeDash} strokeDashoffset={loadOffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
-            </svg>
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '12px', fontWeight: '800' }}>
-              {Math.round(cpuLoad)}%
+      
+      {/* SECTION 1: SYSTEM PULSE (HERO) */}
+      <div className="hero-grid">
+        <div className="glass-card pulse-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px', padding: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div className="label" style={{ color: 'var(--brand-accent)', fontSize: '12px' }}>System Vitality Index</div>
+              <h2 style={{ margin: '4px 0', fontSize: '28px', fontWeight: '800' }}>Live Performance Pulse</h2>
+            </div>
+            <div style={{ padding: '8px 16px', background: 'var(--brand-muted)', borderRadius: '20px', fontSize: '12px', fontWeight: '700', color: 'var(--brand-accent)' }}>
+              {metrics.is_charging ? "🔌 High-Power Mode" : "🔋 Efficiency Mode"}
             </div>
           </div>
-          <div>
-            <div className="label">Live CPU Load</div>
-            <div className="value" style={{ fontSize: '20px' }}>{cpuLoad.toFixed(1)}%</div>
-          </div>
-        </div>
 
-        {/* Thermal Temperature Gauge */}
-        <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: '16px', position: 'relative' }}>
-          <div style={{ position: 'relative', width: '60px', height: '60px' }}>
-            <svg width="60" height="60" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="50" cy="50" r="40" stroke="var(--border)" strokeWidth="8" fill="transparent" />
-              <circle cx="50" cy="50" r="40" stroke="#ff4757" strokeWidth="8" fill="transparent"
-                strokeDasharray={strokeDash} strokeDashoffset={tempOffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
-            </svg>
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '11px', fontWeight: '800' }}>
-              {cpuTemp ? `${Math.round(cpuTemp)}°` : '--'}
+          <div style={{ display: 'flex', gap: '48px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Main Load Gauge */}
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+              <div style={{ position: 'relative', width: '100px', height: '100px' }}>
+                <svg width="100" height="100" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
+                  <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.05)" strokeWidth="10" fill="transparent" />
+                  <circle cx="50" cy="50" r="40" stroke="var(--brand-accent)" strokeWidth="10" fill="transparent"
+                    strokeDasharray={strokeDash} strokeDashoffset={loadOffset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
+                </svg>
+                <div style={{ position: 'absolute', top: '50%', left: '50', transform: 'translate(-50%, -50%)', fontSize: '18px', fontWeight: '900' }}>
+                  {Math.round(cpuLoad)}%
+                </div>
+              </div>
+              <div>
+                <div className="label">Compute Load</div>
+                <div className="value" style={{ fontSize: '32px' }}>{cpuLoad.toFixed(1)}%</div>
+              </div>
+            </div>
+
+            {/* Power Drain */}
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+              <div style={{ width: '48px', height: '48px', background: 'var(--brand-muted)', borderRadius: '12px', display: 'flex', alignItems: 'center', justify: 'center' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--energy-amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div>
+                <div className="label">Drainage</div>
+                <div className="value" style={{ fontSize: '32px', color: 'var(--energy-amber)' }}>
+                  {metrics.battery_discharge_rate ? \`\${Math.abs(metrics.battery_discharge_rate).toFixed(1)}W\` : "0.0W"}
+                </div>
+              </div>
             </div>
           </div>
-          <div>
-            <div className="label">Thermal Vitals</div>
-            <div className="value" style={{ fontSize: '20px' }}>{cpuTemp ? `${cpuTemp.toFixed(1)}°C` : 'N/A'}</div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px', marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
+             <div className="mini-stat">
+                <span className="label">Memory Engine</span>
+                <span className="val" style={{ color: 'var(--text-main)' }}>{(metrics.memory_used / 1024 / 1024 / 1024).toFixed(1)}GB</span>
+             </div>
+             <div className="mini-stat">
+                <span className="label">Thermal Vitals</span>
+                <span className="val" style={{ color: cpuTemp > 70 ? 'var(--thermal-hot)' : 'var(--text-main)' }}>{cpuTemp ? \`\${cpuTemp.toFixed(1)}°C\` : 'N/A'}</span>
+             </div>
+             <div className="mini-stat">
+                <span className="label">System Cycle</span>
+                <span className="val" style={{ color: 'var(--text-main)' }}>{formatUptime(metrics.uptime)}</span>
+             </div>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="label">Memory Engine</div>
-          <div className="value" style={{ fontSize: '20px' }}>{(metrics.memory_used / 1024 / 1024 / 1024).toFixed(1)} GB</div>
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>of {(metrics.memory_total / 1024 / 1024 / 1024).toFixed(1)} GB</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Continuous Uptime</div>
-          <div className="value" style={{ fontSize: '20px' }}>{formatUptime(metrics.uptime)}</div>
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Current System Cycle</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Active Power Tier</div>
-          <div className="value" style={{ fontSize: '20px', color: 'var(--brand-accent)', textTransform: 'capitalize' }}>
-            {metrics.daemon_tier ? metrics.daemon_tier.replace('Tier::', '') : (metrics.config?.operation_mode || "Auto")}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px', padding: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Profile Mode</span>
-              <span style={{ color: 'var(--brand-accent)', fontWeight: '600', textTransform: 'capitalize' }}>
-                {metrics.config?.operation_mode || "Auto"}
-              </span>
+        <div className="group-card">
+          <div className="label">System Strategy</div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+              <div className="label" style={{ fontSize: '10px' }}>Active Power Tier</div>
+              <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--brand-accent)', textTransform: 'uppercase', marginTop: '4px' }}>
+                {metrics.daemon_tier ? metrics.daemon_tier.replace('Tier::', '') : "STANDARD"}
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Active Cores</span>
-              <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>
-                {metrics.daemon_unpark_count !== undefined && metrics.daemon_unpark_count !== null ? metrics.daemon_unpark_count : metrics.cores.filter(c => c.frequency > 0).length} / {metrics.cores.length} Online
-              </span>
+            <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+              <div className="label" style={{ fontSize: '10px' }}>Core Utilization</div>
+              <div style={{ fontSize: '18px', fontWeight: '800', marginTop: '4px' }}>
+                {metrics.daemon_unpark_count || 0} / {metrics.cores.length} <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Online</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Max Perform Cap</span>
-              <span style={{ color: metrics.config?.operation_mode === 'efficiency' ? '#fb1' : 'var(--success)', fontWeight: '600' }}>
-                {metrics.config?.operation_mode === 'efficiency' ? '50% (ECO)' : 
-                 metrics.config?.operation_mode === 'performance' ? '100% (MAX)' : 'DYNAMIC'}
-              </span>
+            <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
+              <div className="label" style={{ fontSize: '10px' }}>Energy Engine</div>
+              <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--success)', marginTop: '4px' }}>
+                {metrics.config?.operation_mode === 'auto' || !metrics.config?.operation_mode ? 'AUTOPILOT' : 'STATIC'}
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Energy Engine</span>
-              <span style={{ color: metrics.config?.operation_mode === 'auto' || !metrics.config?.operation_mode ? 'var(--brand-accent)' : 'var(--success)', fontWeight: '600' }}>
-                {metrics.config?.operation_mode === 'auto' || !metrics.config?.operation_mode ? 'AUTOPILOT' : 'STATIC PROFILE'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">System Power Drainage</div>
-          <div className="value" style={{ fontSize: '20px', color: metrics.battery_discharge_rate ? '#fb1' : 'var(--success)' }}>
-            {metrics.battery_discharge_rate ? `${Math.abs(metrics.battery_discharge_rate).toFixed(1)} W` : "Live AC Feed"}
-          </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Total Energetic Consumption</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Battery Health</div>
-          <div className="value" style={{ fontSize: '20px', color: metrics.battery_health > 80 ? 'var(--success)' : '#fb1' }}>
-            {metrics.battery_health ? `${metrics.battery_health.toFixed(1)}%` : "100.0%"}
-          </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Lifespan Cycle Efficiency</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Charge Cycles</div>
-          <div className="value" style={{ fontSize: '20px', color: '#00f2fe' }}>
-            {metrics.battery_cycles !== undefined && metrics.battery_cycles !== null ? metrics.battery_cycles : "0"}
-          </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Total battery discharge loops</div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Peripheral Sub-States</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>USB Suspend</span>
-              <span style={{ color: metrics.config?.usb_autosuspend ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 'bold' }}>
-                {metrics.config?.usb_autosuspend ? 'AUTO' : 'OFF'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginTop: '4px' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>SATA ALPM</span>
-              <span style={{ color: metrics.config?.sata_alpm ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 'bold' }}>
-                {metrics.config?.sata_alpm ? 'MED' : 'MAX'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Hardware Identity</div>
-          <div className="value" style={{ fontSize: '15.5px' }}>{metrics.manufacturer || "Generic"}</div>
-          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Serial: {metrics.serial_number || "N/A"}
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="label">Cell Specifications</div>
-          <div className="value" style={{ fontSize: '15.5px' }}>{metrics.model_name || "Primary Unit"}</div>
-          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Chemistry: {metrics.technology || "Lithium-Ion"}
           </div>
         </div>
       </div>
 
-      {/* Proactive Mode Dashboard Banner */}
-      <div className="glass-card" style={{
-        background: 'linear-gradient(135deg, rgba(0, 112, 243, 0.1), rgba(0, 255, 136, 0.05))',
-        border: '1px solid var(--brand-accent)',
-        borderRadius: '16px',
-        padding: '20px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <div>
-          <div style={{ fontWeight: '800', fontSize: '14px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ width: '8px', height: '8px', background: 'var(--success)', borderRadius: '50%', boxShadow: '0 0 8px var(--success)' }}></span>
-            Dynamic Heuristic Engine: Operational
+      {/* SECTION 2: ENERGY INTELLIGENCE */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+        <div className="group-card">
+          <div className="label">Energy Intelligence (Battery Architecture)</div>
+          <div className="metrics-row">
+            <div className="stat-card">
+              <div className="label">Capacity Health</div>
+              <div className="value" style={{ fontSize: '24px', color: 'var(--success)' }}>{metrics.battery_health ? \`\${metrics.battery_health.toFixed(1)}%\` : "100%"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">Charge Loops</div>
+              <div className="value" style={{ fontSize: '24px', color: 'var(--frequency-cyan)' }}>{metrics.battery_cycles || 0}</div>
+            </div>
           </div>
-          <p style={{ margin: '4px 0 0 16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-            The governor is tracking real-time thread migration to bias scale responsiveness.
-          </p>
+          <div style={{ marginTop: '8px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span className="label" style={{ fontSize: '10px' }}>Cell Chemistry</span>
+              <span style={{ fontSize: '12px', fontWeight: '700' }}>{metrics.technology || "Lithium-Ion"}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span className="label" style={{ fontSize: '10px' }}>Model Identifier</span>
+              <span style={{ fontSize: '12px', fontWeight: '700' }}>{metrics.model_name || "Primary"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="group-card">
+          <div className="label">Hardware Identity & Sub-States</div>
+          <div className="stat-card">
+            <div className="label">Fabricator</div>
+            <div className="value" style={{ fontSize: '22px' }}>{metrics.manufacturer || "Generic"}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>Serial: {metrics.serial_number || "Internal Only"}</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="stat-card" style={{ padding: '12px' }}>
+               <div className="label" style={{ fontSize: '9px' }}>USB Autosuspend</div>
+               <div style={{ fontSize: '14px', fontWeight: '800', color: metrics.config?.usb_autosuspend ? 'var(--success)' : 'var(--text-secondary)' }}>
+                 {metrics.config?.usb_autosuspend ? "ENABLED" : "DISABLED"}
+               </div>
+            </div>
+            <div className="stat-card" style={{ padding: '12px' }}>
+               <div className="label" style={{ fontSize: '9px' }}>SATA ALPM</div>
+               <div style={{ fontSize: '14px', fontWeight: '800', color: metrics.config?.sata_alpm ? 'var(--success)' : 'var(--text-secondary)' }}>
+                 {metrics.config?.sata_alpm ? "ACTIVE" : "INACTIVE"}
+               </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Grid Expansion for Cores */}
+      {/* SECTION 3: CORE ARCHITECTURE */}
       <div className="glass-card">
-        <div className="label" style={{ marginBottom: '16px' }}>Core Micro-Architecture Frequency Distribution ({metrics.cores.length} Cores)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div className="label">Micro-Architecture Frequency Distribution ({metrics.cores.length} Cores)</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', background: 'var(--brand-muted)', padding: '4px 8px', borderRadius: '4px' }}>
+            Live Oscillator Tracking
+          </div>
+        </div>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
           gap: '12px'
         }}>
           {metrics.cores.map((core) => {
@@ -202,34 +176,30 @@ export const Dashboard = ({ metrics }) => {
                 background: isOffline ? 'rgba(255, 0, 0, 0.01)' : 'rgba(255, 255, 255, 0.02)',
                 border: isOffline ? '1px dashed rgba(255,255,255,0.1)' : '1px solid var(--border)',
                 borderRadius: '12px',
-                padding: '12px',
+                padding: '16px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px',
-                opacity: isOffline ? 0.5 : 1,
+                gap: '8px',
                 transition: 'all 0.3s ease'
               }}>
                 <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
                   <span>Core {core.id}</span>
-                  {isOffline && <span style={{ color: '#fb1', fontSize: '9px', fontWeight: 'bold' }}>PARKED</span>}
+                  {isOffline && <span style={{ color: 'var(--energy-amber)', fontSize: '9px' }}>● PARKED</span>}
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '800', color: isOffline ? 'var(--text-secondary)' : 'var(--brand-accent)' }}>
-                  {isOffline ? 'OFFLINE' : `${core.frequency}`} 
-                  {!isOffline && <span style={{ fontSize: '10px', fontWeight: '400', color: 'var(--text-secondary)' }}> MHz</span>}
+                <div style={{ fontSize: '18px', fontWeight: '900', color: isOffline ? 'var(--text-secondary)' : 'var(--frequency-cyan)' }}>
+                  {isOffline ? '0000' : core.frequency} 
+                  <span style={{ fontSize: '10px', fontWeight: '400', color: 'var(--text-secondary)', marginLeft: '4px' }}>MHz</span>
                 </div>
-                {!isOffline ? (
-                  <div style={{ width: '100%', height: '3px', background: 'var(--border)', borderRadius: '2px', marginTop: '4px' }}>
-                    <div style={{
-                      height: '100%',
-                      width: `${Math.min(100, (core.frequency / 5000) * 100)}%`,
-                      background: 'var(--brand-accent)',
-                      borderRadius: '2px',
-                      transition: 'width 0.3s ease'
-                    }}></div>
-                  </div>
-                ) : (
-                  <div style={{ width: '100%', height: '3px', background: 'rgba(255,255,255,0.03)', borderRadius: '2px', marginTop: '4px' }} />
-                )}
+                <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px' }}>
+                  <div style={{
+                    height: '100%',
+                    width: \`\${isOffline ? 0 : Math.min(100, (core.frequency / 5000) * 100)}%\`,
+                    background: 'var(--brand-accent)',
+                    borderRadius: '2px',
+                    boxShadow: isOffline ? 'none' : '0 0 8px var(--brand-accent)',
+                    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+                  }}></div>
+                </div>
               </div>
             );
           })}

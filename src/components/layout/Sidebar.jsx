@@ -11,10 +11,10 @@ export const Sidebar = ({ activeTab, setActiveTab }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="logo-container">
-          <img src="/logo.png" alt="Z" />
+        <div className="logo-container" style={{ display: 'flex', alignItems: 'center' }}>
+          <img src="/logo.png" alt="WattWise" />
         </div>
-        <span>WattWise</span>
+        <span style={{ fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', marginTop: '-2px' }}>WattWise</span>
       </div>
       <nav className="nav-links">
         {tabs.map((tab) => (
