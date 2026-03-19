@@ -4,7 +4,7 @@ We are thrilled to announce the official release of **WattWise v1.0.0**. This re
 
 ### 🌟 What's New
 -   **Official Rebranding**: Transitioned entire codebase to the "WattWise" identity.
--   **New Visual Language**: Circular "W" energy logo and optimized professional UI.
+-   **Refined Visual Language**: New circular badge logo with a clean, dark navy background and external transparency.
 -   **Enhanced Telemetry**: Full battery metadata support (Manufacturer, Serial, Model, Technology).
 -   **Standardized Metrics**: All energy and power measurements now use Wh, Ah, and W units.
 -   **Structured Data Tables**: Replaced grid layouts with high-precision tables for technical vitals.
@@ -12,7 +12,7 @@ We are thrilled to announce the official release of **WattWise v1.0.0**. This re
 
 ### 🔧 Improvements
 -   **Binary Naming**: Unified command-line interface as `wattwise-ctl`.
--   **Icon Quality**: Native 32-bit RGBA icons for crisp desktop integration.
+-   **Icon Quality**: Native 32-bit RGBA circular icons for crisp desktop integration.
 -   **Build Stability**: Fixed numerous crate import issues and resource path conflicts.
 
 ### 🚀 How to Upgrade

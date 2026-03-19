@@ -1,7 +1,7 @@
-name: zenith-energy
+name: wattwise
 base: core22
 version: '1.0.0'
-summary: Zenith-Energy: Premium Linux CPU Optimizer
+summary: WattWise: Premium Linux CPU Optimizer
 description: |
   A high-performance Linux power management suite built on auto-cpufreq.
   Engineered with Rust and Tauri for maximum efficiency and a premium GUI.
@@ -40,7 +40,7 @@ apps:
       - wayland
       - unity7
   daemon:
-    command: bin/zenith-energy --daemon
+    command: bin/wattwise --daemon
     daemon: simple
     plugs:
       - cpu-control
