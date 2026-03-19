@@ -112,8 +112,7 @@ export const Dashboard = ({ metrics }) => {
           <div className="label">Energy Intelligence (Battery Architecture)</div>
           <div className="metrics-row">
             <div className="stat-card">
-              <div className="label">Capacity Health</div>
-              <div className="value" style={{ fontSize: '24px', color: 'var(--success)' }}>{metrics.battery_health ? \`\${metrics.battery_health.toFixed(1)}%\` : "100%"}</div>
+              <div className="value" style={{ fontSize: '24px', color: 'var(--success)' }}>{metrics.battery_health ? `${metrics.battery_health.toFixed(1)}%` : "100%"}</div>
             </div>
             <div className="stat-card">
               <div className="label">Charge Loops</div>
