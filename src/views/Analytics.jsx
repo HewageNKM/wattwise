@@ -160,10 +160,10 @@ export const Analytics = ({ history, metrics }) => {
         <div className="glass-card">
           <div className="label">Analytics Filter</div>
           <select 
-            className="btn-secondary" 
+            className="theme-select" 
             value={activeFilter}
             onChange={(e) => setActiveFilter(e.target.value)}
-            style={{ width: '100%', marginTop: '12px', padding: '12px', borderRadius: '12px' }}
+            style={{ marginTop: '12px' }}
           >
             <option value="usage">CPU Usage</option>
             <option value="frequency">Frequency</option>

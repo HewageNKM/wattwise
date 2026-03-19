@@ -461,6 +461,34 @@ header {
   transform: scale(1.02);
 }
 
+.theme-select {
+  background: var(--panel-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 12px;
+  width: 100%;
+  cursor: pointer;
+  font-weight: 600;
+  outline: none;
+  transition: var(--transition);
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+.theme-select:hover {
+  border-color: var(--brand-accent);
+  background-color: var(--brand-muted);
+}
+
+.theme-select option {
+  background: #111;
+  color: white;
+}
+
 /* About Page Credits */
 .credit-badge {
   display: inline-block;

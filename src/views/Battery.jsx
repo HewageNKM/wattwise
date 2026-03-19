@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
 export const Battery = ({ metrics, formatTime, notify }) => {
   const [threshold, setThreshold] = useState(metrics.config.battery_threshold || 80);
 

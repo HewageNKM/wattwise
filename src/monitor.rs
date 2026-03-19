@@ -9,7 +9,10 @@ pub struct CpuCoreInfo {
     pub id: usize,
     pub usage: f32,
     pub frequency: u64,
+    pub max_frequency: u64,
     pub temperature: Option<f32>,
+    pub online: bool,
+    pub governor: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,7 +58,10 @@ pub struct Monitor {
     sys: System,
     cached_disk: f32,
     last_disk_check: std::time::Instant,
-    prev_cpu_ticks: Option<(u64, u64)>, 
+    prev_total_ticks: u64,
+    prev_active_ticks: u64,
+    prev_core_ticks: Vec<(u64, u64)>,
+    last_power_state: Option<bool>, 
 }
 
 impl Monitor {
@@ -66,7 +72,10 @@ impl Monitor {
             sys,
             cached_disk: 0.0,
             last_disk_check: std::time::Instant::now() - std::time::Duration::from_secs(12),
-            prev_cpu_ticks: None,
+            prev_total_ticks: 0,
+            prev_active_ticks: 0,
+            prev_core_ticks: Vec::new(),
+            last_power_state: None,
         }
     }
 
@@ -74,8 +83,10 @@ impl Monitor {
         self.sys.refresh_memory();
         let core_temp = self.get_cpu_temp();
         let mut total_cpu_usage = 0.0;
+        let mut cores = Vec::new();
 
         if let Ok(stat) = procfs::KernelStats::current() {
+            // Total CPU Usage
             if let Some(cpu) = stat.cpu_time.first() {
                 let current_total = cpu.user + cpu.nice + cpu.system + cpu.idle + 
                                    cpu.iowait.unwrap_or(0) + cpu.irq.unwrap_or(0) + 
@@ -83,44 +94,85 @@ impl Monitor {
                 let current_idle = cpu.idle + cpu.iowait.unwrap_or(0);
                 let current_active = current_total - current_idle;
 
-                if let Some((prev_total, prev_active)) = self.prev_cpu_ticks {
+                let delta_total = current_total.saturating_sub(self.prev_total_ticks);
+                let delta_active = current_active.saturating_sub(self.prev_active_ticks);
+                if delta_total > 0 {
+                    total_cpu_usage = (delta_active as f32 / delta_total as f32) * 100.0;
+                }
+                self.prev_total_ticks = current_total;
+                self.prev_active_ticks = current_active;
+            }
+
+            // Per-Core Usage
+            let mut core_usages = Vec::new();
+            for (idx, cpu) in stat.cpu_time.iter().skip(1).enumerate() {
+                let current_total = cpu.user + cpu.nice + cpu.system + cpu.idle + 
+                                   cpu.iowait.unwrap_or(0) + cpu.irq.unwrap_or(0) + 
+                                   cpu.softirq.unwrap_or(0) + cpu.steal.unwrap_or(0);
+                let current_idle = cpu.idle + cpu.iowait.unwrap_or(0);
+                let current_active = current_total - current_idle;
+
+                let mut usage = 0.0;
+                if self.prev_core_ticks.len() > idx {
+                    let (prev_total, prev_active) = self.prev_core_ticks[idx];
                     let delta_total = current_total.saturating_sub(prev_total);
                     let delta_active = current_active.saturating_sub(prev_active);
                     if delta_total > 0 {
-                        total_cpu_usage = (delta_active as f32 / delta_total as f32) * 100.0;
+                        usage = (delta_active as f32 / delta_total as f32) * 100.0;
                     }
+                    self.prev_core_ticks[idx] = (current_total, current_active);
+                } else {
+                    self.prev_core_ticks.push((current_total, current_active));
                 }
-                self.prev_cpu_ticks = Some((current_total, current_active));
+                core_usages.push(usage);
             }
-        }
 
-        let mut cores = Vec::new();
-        if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu") {
-            let mut items: Vec<_> = entries.flatten().collect();
-            items.sort_by_key(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
-                    name[3..].parse::<usize>().unwrap_or(0)
-                } else { 0 }
-            });
+            if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu") {
+                let mut items: Vec<_> = entries.flatten().collect();
+                items.sort_by_key(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
+                        name[3..].parse::<usize>().unwrap_or(0)
+                    } else { 999 }
+                });
 
-            for entry in items {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
-                    if let Ok(id) = name[3..].parse::<usize>() {
-                        let freq_path = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", id);
-                        let freq = std::fs::read_to_string(&freq_path)
-                            .ok()
-                            .and_then(|s| s.trim().parse::<u64>().ok())
-                            .map(|f| f / 1000)
-                            .unwrap_or(0); 
+                for entry in items {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()) {
+                        if let Ok(id) = name[3..].parse::<usize>() {
+                            let freq_path = format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", id);
+                            let freq = std::fs::read_to_string(&freq_path)
+                                .ok()
+                                .and_then(|s| s.trim().parse::<u64>().ok())
+                                .map(|f| f / 1000)
+                                .unwrap_or(0); 
+                            
+                            let max_freq = std::fs::read_to_string(format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_max_freq", id))
+                                .ok()
+                                .and_then(|s| s.trim().parse::<u64>().ok())
+                                .map(|f| f / 1000)
+                                .unwrap_or(5000);
 
-                        cores.push(CpuCoreInfo {
-                            id,
-                            usage: if freq > 0 { total_cpu_usage } else { 0.0 }, 
-                            frequency: freq,
-                            temperature: core_temp,
-                        });
+                            let governor = std::fs::read_to_string(format!("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_governor", id))
+                                .unwrap_or_else(|_| "unknown".to_string())
+                                .trim().to_string();
+
+                            let online = std::fs::read_to_string(format!("/sys/devices/system/cpu/cpu{}/online", id))
+                                .ok()
+                                .and_then(|s| s.trim().parse::<u8>().ok())
+                                .map(|o| o == 1)
+                                .unwrap_or(true); // cpu0 might not have online file but is always online
+
+                            cores.push(CpuCoreInfo {
+                                id,
+                                usage: core_usages.get(id).cloned().unwrap_or(0.0),
+                                frequency: freq,
+                                max_frequency: max_freq,
+                                temperature: core_temp,
+                                online,
+                                governor,
+                            });
+                        }
                     }
                 }
             }

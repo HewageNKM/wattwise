@@ -93,7 +93,7 @@ export const Dashboard = ({ metrics }) => {
             <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
               <div className="label" style={{ fontSize: '10px' }}>Core Utilization</div>
               <div style={{ fontSize: '18px', fontWeight: '800', marginTop: '4px' }}>
-                {metrics.daemon_unpark_count || 0} / {metrics.cores.length} <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Online</span>
+                {metrics.cores.filter(c => c.online).length} / {metrics.cores.length} <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Online</span>
               </div>
             </div>
             <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
@@ -169,11 +169,12 @@ export const Dashboard = ({ metrics }) => {
           gap: '12px'
         }}>
           {metrics.cores.map((core) => {
-            const isOffline = core.frequency <= 0;
+            const isOffline = !core.online;
+            const isActive = core.usage > 5 || core.frequency > 2000;
             return (
               <div key={core.id} style={{
-                background: isOffline ? 'rgba(255, 0, 0, 0.01)' : 'rgba(255, 255, 255, 0.02)',
-                border: isOffline ? '1px dashed rgba(255,255,255,0.1)' : '1px solid var(--border)',
+                background: isOffline ? 'rgba(255, 0, 0, 0.01)' : isActive ? 'rgba(0, 255, 136, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                border: isOffline ? '1px dashed rgba(255,255,255,0.1)' : isActive ? '1px solid var(--success)' : '1px solid var(--border)',
                 borderRadius: '12px',
                 padding: '16px',
                 display: 'flex',
@@ -183,7 +184,7 @@ export const Dashboard = ({ metrics }) => {
               }}>
                 <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
                   <span>Core {core.id}</span>
-                  {isOffline && <span style={{ color: 'var(--energy-amber)', fontSize: '9px' }}>● PARKED</span>}
+                  {isOffline ? <span style={{ color: 'var(--thermal-hot)', fontSize: '9px' }}>● OFFLINE</span> : (isActive ? <span style={{ color: 'var(--success)', fontSize: '9px' }}>● ACTIVE</span> : <span style={{ color: 'var(--text-secondary)', fontSize: '9px' }}>● IDLE</span>)}
                 </div>
                 <div style={{ fontSize: '18px', fontWeight: '900', color: isOffline ? 'var(--text-secondary)' : 'var(--frequency-cyan)' }}>
                   {isOffline ? '0000' : core.frequency} 
@@ -193,9 +194,9 @@ export const Dashboard = ({ metrics }) => {
                   <div style={{
                     height: '100%',
                     width: `${isOffline ? 0 : Math.min(100, (core.frequency / 5000) * 100)}%`,
-                    background: 'var(--brand-accent)',
+                    background: isActive ? 'var(--success)' : 'var(--brand-accent)',
                     borderRadius: '2px',
-                    boxShadow: isOffline ? 'none' : '0 0 8px var(--brand-accent)',
+                    boxShadow: isActive ? '0 0 8px var(--success)' : 'none',
                     transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}></div>
                 </div>
