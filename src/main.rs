@@ -73,6 +73,7 @@ fn main() {
     if is_daemon {
         let monitor_mutex = Mutex::new(Monitor::new());
         let power_manager = PowerManager::new();
+        power_manager.enforce_exclusivity();
         println!("WattWise daemon starting...");
         
         loop {
@@ -89,7 +90,11 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             monitor: Mutex::new(Monitor::new()),
-            power_manager: PowerManager::new(),
+            power_manager: {
+                let pm = PowerManager::new();
+                pm.enforce_exclusivity();
+                pm
+            },
         })
         .invoke_handler(tauri::generate_handler![
             get_metrics,

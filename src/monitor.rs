@@ -205,6 +205,8 @@ impl Monitor {
 
         let config = AppConfig::load();
 
+        let events = self.update_events(config.operation_mode.clone(), core_temp, &top_processes);
+
         SystemMetrics {
             total_cpu_usage,
             cores,
@@ -215,7 +217,7 @@ impl Monitor {
             disk_usage: self.cached_disk,
             cpu_temperature: core_temp,
             top_processes,
-            events: self.update_events(config.operation_mode.clone(), core_temp, &top_processes),
+            events,
             config,
             daemon_unpark_count: self.read_state("unpark_count"),
             daemon_max_perf_pct: self.read_state("max_perf_pct"),

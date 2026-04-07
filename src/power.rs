@@ -323,6 +323,27 @@ impl PowerManager {
         }
     }
 
+    pub fn enforce_exclusivity(&self) {
+        let services = ["tlp", "auto-cpufreq", "power-profiles-daemon", "laptop-mode-tools", "thermald"];
+        self.log_event("SYS_INIT", "Enforcing system exclusivity: Scanning for competing power managers...");
+        
+        for svc in services {
+            // Check if service exists
+            let status = std::process::Command::new("systemctl")
+                .args(["list-unit-files", &format!("{}.service", svc)])
+                .output();
+                
+            if let Ok(output) = status {
+                if String::from_utf8_lossy(&output.stdout).contains(&format!("{}.service", svc)) {
+                    self.log_event("CONFLICT_RESOLVED", &format!("Stopping and masking competing service: {}", svc));
+                    let _ = std::process::Command::new("systemctl").args(["stop", svc]).status();
+                    let _ = std::process::Command::new("systemctl").args(["disable", svc]).status();
+                    let _ = std::process::Command::new("systemctl").args(["mask", svc]).status();
+                }
+            }
+        }
+    }
+
     fn set_turbo_dynamic(&self, request_on: bool) -> Result<(), String> {
         let lhl = self.last_high_load.lock().unwrap();
         let sustained_on = lhl.elapsed() < Duration::from_secs(TURBO_SUSTAIN_SEC);

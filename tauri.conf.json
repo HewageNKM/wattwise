@@ -47,16 +47,7 @@
         "files": {
           "/usr/lib/systemd/system/wattwise.service": "scripts/wattwise.service",
           "/usr/bin/wattwise-ctl": "scripts/wattwise-ctl.sh"
-        },
-        "conflicts": [
-          "tlp",
-          "auto-cpufreq",
-          "power-profiles-daemon",
-          "laptop-mode-tools",
-          "thermald"
-        ],
-        "postinst": "scripts/postinst",
-        "postrm": "scripts/postrm"
+        }
       }
     }
   }
