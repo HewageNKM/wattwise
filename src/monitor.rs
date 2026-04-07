@@ -55,7 +55,6 @@ pub struct Monitor {
     prev_total_ticks: u64,
     prev_active_ticks: u64,
     prev_core_ticks: Vec<(u64, u64)>,
-    last_power_state: Option<bool>, 
     last_mode: Option<String>,
     events: Vec<SystemEvent>,
 }
@@ -71,7 +70,6 @@ impl Monitor {
             prev_total_ticks: 0,
             prev_active_ticks: 0,
             prev_core_ticks: Vec::new(),
-            last_power_state: None,
             last_mode: None,
             events: Vec::new(),
         };

@@ -20,7 +20,6 @@ pub struct PowerManager {
     last_park_event: Mutex<Instant>,
     last_high_load: Mutex<Instant>, 
     low_load_ticks: AtomicUsize,
-    high_load_ticks: AtomicUsize,
     current_unpark_count: AtomicUsize,
     prev_usb_state: std::sync::atomic::AtomicBool,
     prev_sata_state: std::sync::atomic::AtomicBool,
@@ -45,7 +44,6 @@ impl PowerManager {
             last_park_event: Mutex::new(Instant::now()),
             last_high_load: Mutex::new(Instant::now()),
             low_load_ticks: AtomicUsize::new(0),
-            high_load_ticks: AtomicUsize::new(0),
             current_unpark_count: AtomicUsize::new(cores),
             prev_usb_state: std::sync::atomic::AtomicBool::new(false),
             prev_sata_state: std::sync::atomic::AtomicBool::new(false),
@@ -67,6 +65,7 @@ impl PowerManager {
         let cpu_usage = metrics.total_cpu_usage;
         let cpu_temp = metrics.cpu_temperature.unwrap_or(0.0);
         
+        // --- 1. Load Averaging (EMA) ---
         let alpha = 0.25; 
         let prev_avg = f32::from_bits(self.rolling_load_avg.load(Ordering::Relaxed));
         let rolling_avg = (alpha * cpu_usage) + ((1.0 - alpha) * prev_avg);
@@ -77,13 +76,13 @@ impl PowerManager {
             *lhl = Instant::now();
         }
 
-        let target_tier = match rolling_avg {
+        // --- 2. Tier Selection ---
+        let mut target_tier = match rolling_avg {
             l if l < 10.0 => Tier::Eco,
             l if l < 45.0 => Tier::Balanced,
-            l if l < 75.0 => Tier::Performance,
+            l if l < 70.0 => Tier::Performance,
             _ => Tier::Extreme,
         };
-
 
         let mut max_cores_limit = self.total_cores;
         let mut force_all_cores = false;
@@ -108,14 +107,12 @@ impl PowerManager {
             }
         }
 
-
-
+        // --- 3. Stability & Transitions ---
         let mut current_tier_lock = self.current_tier.lock().unwrap();
         let mut last_trans_lock = self.last_transition.lock().unwrap();
 
-        println!("Autopilot: Load={:.1}%, Rolling={:.1}% | Tier={:?}", cpu_usage, rolling_avg, target_tier);
-
-        if *current_tier_lock != target_tier && last_trans_lock.elapsed() > Duration::from_secs(2) {
+        if *current_tier_lock != target_tier && last_trans_lock.elapsed() > Duration::from_secs(3) {
+            println!("🔄 MODE_SHIFT: {:?} -> {:?}", *current_tier_lock, target_tier);
             self.log_event("MODE_SHIFT", &format!("System strategy transitioned: {:?} -> {:?}", *current_tier_lock, target_tier));
             self.apply_tier_hardware(target_tier);
             
@@ -128,25 +125,31 @@ impl PowerManager {
             *last_trans_lock = Instant::now();
         }
 
+        // --- 4. Core Allocation (Optimized) ---
+        let core_floor = match *current_tier_lock {
+            Tier::Eco => CORE_MINIMUM,
+            Tier::Balanced => (self.total_cores as f32 * 0.5).ceil() as usize,
+            _ => self.total_cores,
+        };
+
         let ideal_cores = if force_all_cores {
             self.total_cores
         } else {
-            ((self.total_cores as f32 * (rolling_avg / 100.0)) * 1.25).ceil() as usize
+            // Non-linear scaling: More cores unparked earlier to prevent spike lag
+            let scaling_factor = if rolling_avg > 30.0 { 1.5 } else { 1.2 };
+            ((self.total_cores as f32 * (rolling_avg / 100.0)) * scaling_factor).ceil() as usize
         };
-        let ideal_clamped = ideal_cores.clamp(CORE_MINIMUM, max_cores_limit);
+        
+        let ideal_clamped = ideal_cores.clamp(core_floor, max_cores_limit);
 
         let current_unparked = self.current_unpark_count.load(Ordering::SeqCst);
         let mut final_core_target = current_unparked;
         
         if ideal_clamped > current_unparked {
-            let ticks = self.high_load_ticks.fetch_add(1, Ordering::Relaxed);
-            if ticks >= 1 { // Wait for 1 sustained tick (1s dampening)
-                final_core_target = ideal_clamped;
-                self.high_load_ticks.store(0, Ordering::Relaxed);
-            }
-            self.low_load_ticks.store(0, Ordering::Relaxed);
+            // Aggressive unparking for responsiveness
+            final_core_target = ideal_clamped;
         } else if ideal_clamped < current_unparked {
-            self.high_load_ticks.store(0, Ordering::Relaxed);
+            // Conservative parking for stability
             let ticks = self.low_load_ticks.fetch_add(1, Ordering::Relaxed);
             if ticks >= LOW_LOAD_THRESHOLD_TICKS {
                 final_core_target = ideal_clamped;
@@ -161,14 +164,24 @@ impl PowerManager {
         let state_json = format!("{{\"unpark_count\": {}, \"tier\": \"{:?}\"}}", final_core_target, target_tier);
         let _ = std::fs::write("/run/wattwise.state", state_json);
 
-        // Eco-Exclusive advanced power savings
+        // --- 5. Thermal & Advanced Tuning ---
+        // Thermal Cutoff for Turbo
+        if cpu_temp >= THERMAL_CUTOFF_CELSIUS {
+            let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/no_turbo", "1");
+            let _ = self.safe_write("/sys/devices/system/cpu/cpufreq/boost", "0");
+            if cpu_temp >= THERMAL_CUTOFF_CELSIUS + 5.0 {
+                println!("🔴 THERMAL EMERGENCY: {}°C. Forcing Eco Caps.", cpu_temp);
+                apply_eco_caps = true;
+            }
+        }
+
         if apply_eco_caps {
-            self.apply_brightness_cap(40.0); // 40% cap
+            self.apply_brightness_cap(40.0);
             self.set_pcie_aspm("powersave");
             self.set_nmi_watchdog(false);
             self.set_vm_writeback(3000); 
-            self.set_laptop_mode(5); // Aggressive disk power-saving
-            self.set_smt_status(false); // Disable Hyper-Threading
+            self.set_laptop_mode(5); 
+            self.set_smt_status(false);
             if !self.prev_usb_state.load(Ordering::Relaxed) {
                 self.set_usb_autosuspend(true);
                 self.prev_usb_state.store(true, Ordering::Relaxed);
@@ -178,18 +191,21 @@ impl PowerManager {
                 self.prev_sata_state.store(true, Ordering::Relaxed);
             }
         } else {
-            self.set_pcie_aspm("performance");
-            self.set_nmi_watchdog(true);
-            self.set_vm_writeback(1500); // Back to default 15s
-            self.set_laptop_mode(0); // Disable laptop mode Node triggers
-            self.set_smt_status(true); // Re-enable Hyper-Threading
-            if self.prev_usb_state.load(Ordering::Relaxed) {
-                self.set_usb_autosuspend(false);
-                self.prev_usb_state.store(false, Ordering::Relaxed);
-            }
-            if self.prev_sata_state.load(Ordering::Relaxed) {
-                self.set_sata_alpm(false);
-                self.prev_sata_state.store(false, Ordering::Relaxed);
+            // Only restore if not already in a high-thermal state
+            if cpu_temp < THERMAL_CUTOFF_CELSIUS - 5.0 {
+                self.set_pcie_aspm("performance");
+                self.set_nmi_watchdog(true);
+                self.set_vm_writeback(1500); 
+                self.set_laptop_mode(0); 
+                self.set_smt_status(true);
+                if self.prev_usb_state.load(Ordering::Relaxed) {
+                    self.set_usb_autosuspend(false);
+                    self.prev_usb_state.store(false, Ordering::Relaxed);
+                }
+                if self.prev_sata_state.load(Ordering::Relaxed) {
+                    self.set_sata_alpm(false);
+                    self.prev_sata_state.store(false, Ordering::Relaxed);
+                }
             }
         }
 

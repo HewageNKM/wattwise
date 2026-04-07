@@ -2,6 +2,7 @@ use wattwise::monitor::{self, Monitor};
 use wattwise::power::PowerManager;
 use wattwise::config::AppConfig;
 use std::sync::Mutex;
+use std::process::Command;
 use tauri::{Manager, State, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent}};
 
 struct AppState {
@@ -49,7 +50,6 @@ fn set_operation_mode(_state: State<AppState>, mode: String) -> Result<(), Strin
 
 #[tauri::command]
 fn get_logs() -> Result<String, String> {
-    use std::process::Command;
     let output = Command::new("tail")
         // UPDATED: Pointing to /var/log/
         .args(["-n", "100", "/var/log/wattwise.log"])
