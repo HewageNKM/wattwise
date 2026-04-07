@@ -56,6 +56,8 @@ pub struct Monitor {
     prev_active_ticks: u64,
     prev_core_ticks: Vec<(u64, u64)>,
     last_mode: Option<String>,
+    last_temp: Option<f32>,
+    last_high_cpu_log: std::time::Instant,
     events: Vec<SystemEvent>,
 }
 
@@ -71,6 +73,8 @@ impl Monitor {
             prev_active_ticks: 0,
             prev_core_ticks: Vec::new(),
             last_mode: None,
+            last_temp: None,
+            last_high_cpu_log: std::time::Instant::now() - std::time::Duration::from_secs(60),
             events: Vec::new(),
         };
         monitor.load_events_from_log();
@@ -211,7 +215,7 @@ impl Monitor {
             disk_usage: self.cached_disk,
             cpu_temperature: core_temp,
             top_processes,
-            events: self.update_events(config.operation_mode.clone()),
+            events: self.update_events(config.operation_mode.clone(), core_temp, &top_processes),
             config,
             daemon_unpark_count: self.read_state("unpark_count"),
             daemon_max_perf_pct: self.read_state("max_perf_pct"),
@@ -219,21 +223,49 @@ impl Monitor {
         }
     }
 
-    fn update_events(&mut self, mode: String) -> Vec<SystemEvent> {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    fn update_events(&mut self, mode: String, current_temp: Option<f32>, top_procs: &Vec<ProcessInfo>) -> Vec<SystemEvent> {
+        let now_unix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let mut new_events = Vec::new();
 
-        // Mode Change Detection
+        // 1. Mode Change Detection
         if let Some(prev_mode) = &self.last_mode {
             if mode != *prev_mode {
                 new_events.push(SystemEvent {
-                    timestamp: now,
+                    timestamp: now_unix,
                     event_type: "MODE_SHIFT".to_string(),
                     description: format!("System strategy shifted to {}", mode.to_uppercase()),
                 });
             }
         }
         self.last_mode = Some(mode);
+
+        // 2. Thermal Spike Detection (> 5°C jump or > 75°C absolute)
+        if let Some(temp) = current_temp {
+            if let Some(prev_temp) = self.last_temp {
+                if temp > prev_temp + 5.0 || (temp > 75.0 && prev_temp <= 75.0) {
+                    new_events.push(SystemEvent {
+                        timestamp: now_unix,
+                        event_type: "THERMAL_SPIKE".to_string(),
+                        description: format!("Thermal anomaly detected: {:.1}°C", temp),
+                    });
+                }
+            }
+            self.last_temp = Some(temp);
+        }
+
+        // 3. High Resource Process Detection
+        if self.last_high_cpu_log.elapsed() > std::time::Duration::from_secs(30) {
+            if let Some(p) = top_procs.first() {
+                if p.cpu_usage > 90.0 {
+                    new_events.push(SystemEvent {
+                        timestamp: now_unix,
+                        event_type: "RESOURCE_HEAVY".to_string(),
+                        description: format!("Process '{}' (PID {}) is consuming > 90% CPU", p.name, p.pid),
+                    });
+                    self.last_high_cpu_log = std::time::Instant::now();
+                }
+            }
+        }
 
         for ev in &new_events {
             self.events.push(ev.clone());

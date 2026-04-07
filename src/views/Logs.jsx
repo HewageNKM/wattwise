@@ -7,6 +7,19 @@ const formatTimestamp = (ts) => {
 export const Logs = ({ metrics }) => {
   const events = metrics.events || [];
 
+  const getEventStyle = (type) => {
+    switch (type) {
+      case 'MODE_SHIFT': return { bg: 'rgba(0, 112, 243, 0.1)', color: 'var(--brand-accent)' };
+      case 'THERMAL_SPIKE':
+      case 'THERMAL_TRIP':
+      case 'THERMAL_EMERGENCY': return { bg: 'rgba(255, 71, 87, 0.1)', color: '#ff4757' };
+      case 'RESOURCE_HEAVY': return { bg: 'rgba(255, 187, 17, 0.1)', color: '#fb1' };
+      case 'CORE_SHIFT': return { bg: 'rgba(0, 242, 254, 0.1)', color: '#00f2fe' };
+      case 'HW_POLICY': return { bg: 'rgba(0, 255, 136, 0.1)', color: '#00ff88' };
+      default: return { bg: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)' };
+    }
+  };
+
   return (
     <div className="page-layout">
       <div className="main-pane">
@@ -29,32 +42,35 @@ export const Logs = ({ metrics }) => {
                 Waiting for system interrupts and power state shifts...
               </div>
             ) : (
-              events.slice().reverse().map((ev, i) => (
-                <div key={i} style={{ 
-                  display: 'flex', 
-                  gap: '20px', 
-                  paddingBottom: '16px', 
-                  borderBottom: '1px solid rgba(255,255,255,0.03)',
-                  animation: 'fadeIn 0.3s ease-out'
-                }}>
-                  <div style={{ minWidth: '80px', fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>
-                    {formatTimestamp(ev.timestamp)}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span className="status-pill" style={{ 
-                        fontSize: '9px', 
-                        padding: '2px 6px',
-                        background: ev.event_type === 'MODE_SHIFT' ? 'rgba(0, 153, 255, 0.1)' : 'rgba(0, 255, 136, 0.1)',
-                        color: ev.event_type === 'MODE_SHIFT' ? 'var(--frequency-cyan)' : 'var(--success)'
-                      }}>
-                        {ev.event_type}
-                      </span>
+              events.slice().reverse().map((ev, i) => {
+                const styles = getEventStyle(ev.event_type);
+                return (
+                  <div key={i} style={{ 
+                    display: 'flex', 
+                    gap: '20px', 
+                    paddingBottom: '16px', 
+                    borderBottom: '1px solid rgba(255,255,255,0.03)',
+                    animation: 'fadeIn 0.3s ease-out'
+                  }}>
+                    <div style={{ minWidth: '80px', fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                      {formatTimestamp(ev.timestamp)}
                     </div>
-                    <div style={{ fontSize: '14px', fontWeight: '500' }}>{ev.description}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span className="status-pill" style={{ 
+                          fontSize: '9px', 
+                          padding: '2px 6px',
+                          background: styles.bg,
+                          color: styles.color
+                        }}>
+                          {ev.event_type}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: '500' }}>{ev.description}</div>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

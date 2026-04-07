@@ -167,10 +167,11 @@ impl PowerManager {
         // --- 5. Thermal & Advanced Tuning ---
         // Thermal Cutoff for Turbo
         if cpu_temp >= THERMAL_CUTOFF_CELSIUS {
+            self.log_event("THERMAL_TRIP", &format!("CPU Temperature critical ({}°C). Disabling Turbo boost components.", cpu_temp));
             let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/no_turbo", "1");
             let _ = self.safe_write("/sys/devices/system/cpu/cpufreq/boost", "0");
             if cpu_temp >= THERMAL_CUTOFF_CELSIUS + 5.0 {
-                println!("🔴 THERMAL EMERGENCY: {}°C. Forcing Eco Caps.", cpu_temp);
+                self.log_event("THERMAL_EMERGENCY", &format!("Critical overheat detected ({}°C). Forcing emergency Eco-Caps.", cpu_temp));
                 apply_eco_caps = true;
             }
         }
@@ -231,10 +232,12 @@ impl PowerManager {
     }
 
     pub fn set_pcie_aspm(&self, policy: &str) {
+        self.log_event("HW_POLICY", &format!("PCIe ASPM policy set to {}", policy));
         let _ = self.safe_write("/sys/module/pcie_aspm/parameters/policy", policy);
     }
 
     pub fn set_nmi_watchdog(&self, enabled: bool) {
+        self.log_event("HW_POLICY", &format!("Kernel NMI Watchdog -> {}", if enabled { "ENABLED" } else { "DISABLED" }));
         let _ = self.safe_write("/proc/sys/kernel/nmi_watchdog", if enabled { "1" } else { "0" });
     }
 
@@ -243,14 +246,17 @@ impl PowerManager {
     }
 
     pub fn set_laptop_mode(&self, mode: u32) {
+        self.log_event("HW_POLICY", &format!("VM Laptop Mode tier set to {}", mode));
         let _ = self.safe_write("/proc/sys/vm/laptop_mode", &mode.to_string());
     }
 
     pub fn set_smt_status(&self, enabled: bool) {
+        self.log_event("HW_POLICY", &format!("SMT (Hyper-Threading) -> {}", if enabled { "ON" } else { "OFF" }));
         let _ = self.safe_write("/sys/devices/system/cpu/smt/control", if enabled { "on" } else { "off" });
     }
 
     pub fn set_usb_autosuspend(&self, enabled: bool) {
+        self.log_event("HW_POLICY", &format!("USB Bus Autosuspend -> {}", if enabled { "ACTIVE" } else { "INACTIVE" }));
         let value = if enabled { "auto" } else { "on" };
         if let Ok(entries) = std::fs::read_dir("/sys/bus/usb/devices") {
             for entry in entries.flatten() {
@@ -261,6 +267,7 @@ impl PowerManager {
     }
 
     pub fn set_sata_alpm(&self, enabled: bool) {
+        self.log_event("HW_POLICY", &format!("SATA Aggressive Link Power -> {}", if enabled { "ENABLED" } else { "DISABLED" }));
         let value = if enabled { "med_power_with_dipm" } else { "max_performance" };
         if let Ok(entries) = std::fs::read_dir("/sys/class/scsi_host") {
             for entry in entries.flatten() {
@@ -274,12 +281,15 @@ impl PowerManager {
         let mut last_park = self.last_park_event.lock().unwrap();
         if last_park.elapsed() < Duration::from_secs(3) { return; }
 
+        self.log_event("SCHEDULER", &format!("Targeting {} unparked cores for current load strategy.", target));
+
         for id in 1..self.total_cores {
             let online = id < target;
             let path = format!("/sys/devices/system/cpu/cpu{}/online", id);
             if let Ok(current) = std::fs::read_to_string(&path) {
-                if current.trim() != if online { "1" } else { "0" } {
-                    println!("✅ Core {} set online={}", id, online);
+                let was_online = current.trim() == "1";
+                if was_online != online {
+                    self.log_event("CORE_SHIFT", &format!("CPU Core {}: {}", id, if online { "ONLINE" } else { "OFFLINE (PARKED)" }));
                 }
             }
             let _ = self.safe_write(&path, if online { "1" } else { "0" });
