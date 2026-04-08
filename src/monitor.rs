@@ -45,6 +45,7 @@ pub struct SystemMetrics {
     pub daemon_unpark_count: Option<u32>,
     pub daemon_max_perf_pct: Option<u32>,
     pub daemon_tier: Option<String>,
+    pub is_on_ac: bool,
     pub events: Vec<SystemEvent>,
 }
 
@@ -222,7 +223,26 @@ impl Monitor {
             daemon_unpark_count: self.read_state("unpark_count"),
             daemon_max_perf_pct: self.read_state("max_perf_pct"),
             daemon_tier: self.read_state_str("tier"),
+            is_on_ac: self.check_ac_power(),
         }
+    }
+
+    fn check_ac_power(&self) -> bool {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Ok(t) = std::fs::read_to_string(path.join("type")) {
+                    if t.trim() == "Mains" {
+                        if let Ok(online) = std::fs::read_to_string(path.join("online")) {
+                            if online.trim() == "1" {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn update_events(&mut self, mode: String, current_temp: Option<f32>, top_procs: &Vec<ProcessInfo>) -> Vec<SystemEvent> {

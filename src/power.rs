@@ -76,36 +76,47 @@ impl PowerManager {
             *lhl = Instant::now();
         }
 
-        // --- 2. Tier Selection ---
-        let mut target_tier = match rolling_avg {
-            l if l < 10.0 => Tier::Eco,
-            l if l < 45.0 => Tier::Balanced,
-            l if l < 70.0 => Tier::Performance,
-            _ => Tier::Extreme,
-        };
-
         let mut max_cores_limit = self.total_cores;
         let mut force_all_cores = false;
         let mut force_turbo_off = false;
-        let mut apply_eco_caps = false;
+        
+        let operation_mode = metrics.config.operation_mode.as_str();
 
-        match metrics.config.operation_mode.as_str() {
+        // --- 2. Profile & Strategy Selection ---
+        let (target_tier, mut apply_eco_caps) = match operation_mode {
             "performance" => {
-                target_tier = Tier::Extreme;
                 force_all_cores = true;
                 self.set_asus_fan_policy(1); // Turbo Boost
+                (Tier::Extreme, false)
             },
             "efficiency" => {
-                target_tier = Tier::Eco;
                 max_cores_limit = (self.total_cores / 2).max(CORE_MINIMUM);
                 force_turbo_off = true;
-                apply_eco_caps = true;
                 self.set_asus_fan_policy(2); // Silent Mode
+                (Tier::Eco, true)
             },
-            _ => {
+            _ => { // Auto-Pilot
                 self.set_asus_fan_policy(0); // Standard Mode
+                let is_ac = metrics.is_on_ac;
+                
+                let tier = if is_ac {
+                    match rolling_avg { // Performance-biased thresholds for AC
+                        l if l < 10.0 => Tier::Eco,
+                        l if l < 30.0 => Tier::Balanced,
+                        l if l < 55.0 => Tier::Performance,
+                        _ => Tier::Extreme,
+                    }
+                } else {
+                    match rolling_avg { // Efficiency-biased thresholds for Battery
+                        l if l < 20.0 => Tier::Eco,
+                        l if l < 55.0 => Tier::Balanced,
+                        l if l < 80.0 => Tier::Performance,
+                        _ => Tier::Extreme,
+                    }
+                };
+                (tier, !is_ac)
             }
-        }
+        };
 
         // --- 3. Stability & Transitions ---
         let mut current_tier_lock = self.current_tier.lock().unwrap();
@@ -126,10 +137,15 @@ impl PowerManager {
         }
 
         // --- 4. Core Allocation (Optimized) ---
-        let core_floor = match *current_tier_lock {
-            Tier::Eco => CORE_MINIMUM,
-            Tier::Balanced => (self.total_cores as f32 * 0.5).ceil() as usize,
-            _ => self.total_cores,
+        let core_floor = if metrics.is_on_ac {
+            // On AC, keep more cores active for better background/multitask throughput
+            (self.total_cores as f32 * 0.75).ceil() as usize
+        } else {
+            match *current_tier_lock {
+                Tier::Eco => CORE_MINIMUM,
+                Tier::Balanced => (self.total_cores as f32 * 0.5).ceil() as usize,
+                _ => self.total_cores,
+            }
         };
 
         let ideal_cores = if force_all_cores {
@@ -176,7 +192,7 @@ impl PowerManager {
             }
         }
 
-        if apply_eco_caps {
+        if apply_eco_caps && !metrics.is_on_ac {
             self.apply_brightness_cap(40.0);
             self.set_pcie_aspm("powersave");
             self.set_nmi_watchdog(false);
@@ -192,20 +208,24 @@ impl PowerManager {
                 self.prev_sata_state.store(true, Ordering::Relaxed);
             }
         } else {
-            // Only restore if not already in a high-thermal state
-            if cpu_temp < THERMAL_CUTOFF_CELSIUS - 5.0 {
-                self.set_pcie_aspm("performance");
+            if metrics.is_on_ac || cpu_temp < THERMAL_CUTOFF_CELSIUS - 5.0 {
+                self.set_pcie_aspm(if metrics.is_on_ac { "performance" } else { "powersave" });
                 self.set_nmi_watchdog(true);
                 self.set_vm_writeback(1500); 
                 self.set_laptop_mode(0); 
                 self.set_smt_status(true);
-                if self.prev_usb_state.load(Ordering::Relaxed) {
-                    self.set_usb_autosuspend(false);
-                    self.prev_usb_state.store(false, Ordering::Relaxed);
+                
+                // On AC, force these OFF even if the tier suggests otherwise
+                let target_usb_auto = !metrics.is_on_ac && apply_eco_caps;
+                let target_sata_alpm = !metrics.is_on_ac && apply_eco_caps;
+
+                if self.prev_usb_state.load(Ordering::Relaxed) != target_usb_auto {
+                    self.set_usb_autosuspend(target_usb_auto);
+                    self.prev_usb_state.store(target_usb_auto, Ordering::Relaxed);
                 }
-                if self.prev_sata_state.load(Ordering::Relaxed) {
-                    self.set_sata_alpm(false);
-                    self.prev_sata_state.store(false, Ordering::Relaxed);
+                if self.prev_sata_state.load(Ordering::Relaxed) != target_sata_alpm {
+                    self.set_sata_alpm(target_sata_alpm);
+                    self.prev_sata_state.store(target_sata_alpm, Ordering::Relaxed);
                 }
             }
         }

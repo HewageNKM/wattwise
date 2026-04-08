@@ -21,7 +21,31 @@ impl Default for AppConfig {
 
 impl AppConfig {
     fn get_path() -> PathBuf {
-        let mut path = PathBuf::from("/etc/wattwise");
+        // 1. Try to find the real user's home even if we are running as root
+        let home = if let Ok(h) = std::env::var("HOME") {
+            if h == "/root" {
+                // We are root, try to find the standard user's home
+                if let Ok(entries) = fs::read_dir("/home") {
+                    entries.flatten()
+                        .filter(|e| e.path().is_dir())
+                        .map(|e| e.path().to_string_lossy().to_string())
+                        .next()
+                        .unwrap_or_else(|| "/etc/wattwise".to_string())
+                } else {
+                    "/etc/wattwise".to_string()
+                }
+            } else {
+                h
+            }
+        } else {
+            "/etc/wattwise".to_string()
+        };
+
+        let mut path = PathBuf::from(home);
+        if path.starts_with("/home") {
+            path.push(".config/wattwise");
+        }
+        
         if !path.exists() {
             let _ = fs::create_dir_all(&path);
         }
