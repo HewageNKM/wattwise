@@ -7,14 +7,28 @@ pub struct AppConfig {
     pub operation_mode: String, // "auto", "performance", "efficiency"
     pub usb_autosuspend: bool,
     pub sata_alpm: bool,
+    pub pcie_aspm: bool,
+    pub nmi_watchdog: bool,
+    pub vm_writeback: bool,
+    pub laptop_mode: bool,
+    pub smt_status: bool,
+    pub bluetooth_enabled: bool,
+    pub wifi_enabled: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             operation_mode: "auto".to_string(),
-            usb_autosuspend: true, // Safe default for Linux
-            sata_alpm: true,       // Safe default for Linux
+            usb_autosuspend: true,
+            sata_alpm: true,
+            pcie_aspm: true,
+            nmi_watchdog: true,
+            vm_writeback: true,
+            laptop_mode: true,
+            smt_status: true,
+            bluetooth_enabled: true,
+            wifi_enabled: true,
         }
     }
 }

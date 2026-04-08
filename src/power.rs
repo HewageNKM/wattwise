@@ -23,6 +23,8 @@ pub struct PowerManager {
     current_unpark_count: AtomicUsize,
     prev_usb_state: std::sync::atomic::AtomicBool,
     prev_sata_state: std::sync::atomic::AtomicBool,
+    prev_wifi_state: std::sync::atomic::AtomicBool,
+    prev_bluetooth_state: std::sync::atomic::AtomicBool,
 }
 
 impl PowerManager {
@@ -47,6 +49,8 @@ impl PowerManager {
             current_unpark_count: AtomicUsize::new(cores),
             prev_usb_state: std::sync::atomic::AtomicBool::new(false),
             prev_sata_state: std::sync::atomic::AtomicBool::new(false),
+            prev_wifi_state: std::sync::atomic::AtomicBool::new(true),
+            prev_bluetooth_state: std::sync::atomic::AtomicBool::new(true),
         };
         pm.park_cores_safe(cores); // Force unpark on boot
         pm
@@ -191,22 +195,44 @@ impl PowerManager {
             }
         }
 
-        if apply_eco_caps && !metrics.is_on_ac {
+        // --- 5. Advanced Hardware Tuning ---
+        let config = &metrics.config;
+
+        if apply_eco_caps {
+            // Apply Power-Saving Caps
             self.apply_brightness_cap(40.0);
-            self.set_pcie_aspm("powersave");
-            self.set_nmi_watchdog(false);
-            self.set_vm_writeback(3000); 
-            self.set_laptop_mode(5); 
-            self.set_smt_status(false);
-            if !self.prev_usb_state.load(Ordering::Relaxed) {
+            if config.pcie_aspm { self.set_pcie_aspm("powersave"); }
+            if !config.nmi_watchdog { self.set_nmi_watchdog(false); }
+            if config.vm_writeback { self.set_vm_writeback(3000); }
+            if config.laptop_mode { self.set_laptop_mode(5); }
+            if !config.smt_status { self.set_smt_status(false); }
+
+            if config.usb_autosuspend && !self.prev_usb_state.load(Ordering::Relaxed) {
                 self.set_usb_autosuspend(true);
                 self.prev_usb_state.store(true, Ordering::Relaxed);
             }
-            if !self.prev_sata_state.load(Ordering::Relaxed) {
+            if config.sata_alpm && !self.prev_sata_state.load(Ordering::Relaxed) {
                 self.set_sata_alpm(true);
                 self.prev_sata_state.store(true, Ordering::Relaxed);
             }
+
+            // Intelligent Radio Control (Only disable if NOT connected)
+            if !config.wifi_enabled && self.prev_wifi_state.load(Ordering::Relaxed) {
+                if !self.is_wifi_connected() {
+                    self.set_wifi_state(false);
+                    self.prev_wifi_state.store(false, Ordering::Relaxed);
+                    self.log_event("IDLE_RADIO", "No WiFi connection active. Radio disabled for power saving.");
+                }
+            }
+            if !config.bluetooth_enabled && self.prev_bluetooth_state.load(Ordering::Relaxed) {
+                if !self.is_bluetooth_connected() {
+                    self.set_bluetooth_state(false);
+                    self.prev_bluetooth_state.store(false, Ordering::Relaxed);
+                    self.log_event("IDLE_RADIO", "No Bluetooth devices connected. Radio disabled for power saving.");
+                }
+            }
         } else {
+            // Restore Performance States (or if on AC)
             if metrics.is_on_ac || cpu_temp < THERMAL_CUTOFF_CELSIUS - 5.0 {
                 self.set_pcie_aspm(if metrics.is_on_ac { "performance" } else { "powersave" });
                 self.set_nmi_watchdog(true);
@@ -214,17 +240,27 @@ impl PowerManager {
                 self.set_laptop_mode(0); 
                 self.set_smt_status(true);
                 
-                // On AC, force these OFF even if the tier suggests otherwise
-                let target_usb_auto = !metrics.is_on_ac && apply_eco_caps;
-                let target_sata_alpm = !metrics.is_on_ac && apply_eco_caps;
-
-                if self.prev_usb_state.load(Ordering::Relaxed) != target_usb_auto {
-                    self.set_usb_autosuspend(target_usb_auto);
-                    self.prev_usb_state.store(target_usb_auto, Ordering::Relaxed);
+                // On AC, unblock radios immediately
+                if metrics.is_on_ac {
+                    if !self.prev_wifi_state.load(Ordering::Relaxed) {
+                        self.set_wifi_state(true);
+                        self.prev_wifi_state.store(true, Ordering::Relaxed);
+                    }
+                    if !self.prev_bluetooth_state.load(Ordering::Relaxed) {
+                        self.set_bluetooth_state(true);
+                        self.prev_bluetooth_state.store(true, Ordering::Relaxed);
+                    }
                 }
-                if self.prev_sata_state.load(Ordering::Relaxed) != target_sata_alpm {
-                    self.set_sata_alpm(target_sata_alpm);
-                    self.prev_sata_state.store(target_sata_alpm, Ordering::Relaxed);
+
+                if self.prev_usb_state.load(Ordering::Relaxed) != (config.usb_autosuspend && apply_eco_caps) {
+                    let target = config.usb_autosuspend && apply_eco_caps;
+                    self.set_usb_autosuspend(target);
+                    self.prev_usb_state.store(target, Ordering::Relaxed);
+                }
+                if self.prev_sata_state.load(Ordering::Relaxed) != (config.sata_alpm && apply_eco_caps) {
+                    let target = config.sata_alpm && apply_eco_caps;
+                    self.set_sata_alpm(target);
+                    self.prev_sata_state.store(target, Ordering::Relaxed);
                 }
             }
         }
@@ -389,6 +425,51 @@ impl PowerManager {
 
     pub fn set_asus_fan_policy(&self, policy: u32) {
         let _ = self.safe_write("/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy", &policy.to_string());
+    }
+
+
+    pub fn is_wifi_connected(&self) -> bool {
+        if let Ok(entries) = fs::read_dir("/sys/class/net") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('w') { // Typically wlan0, wlo1, etc.
+                    let carrier_path = format!("/sys/class/net/{}/carrier", name);
+                    if let Ok(content) = fs::read_to_string(carrier_path) {
+                        if content.trim() == "1" { return true; }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub fn is_bluetooth_connected(&self) -> bool {
+        if let Ok(entries) = fs::read_dir("/sys/class/bluetooth") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("hci") {
+                    let conn_path = format!("/sys/class/bluetooth/{}/conn_count", name);
+                    if let Ok(content) = fs::read_to_string(conn_path) {
+                        if let Ok(count) = content.trim().parse::<u32>() {
+                            if count > 0 { return true; }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    pub fn set_wifi_state(&self, enabled: bool) {
+        let _ = std::process::Command::new("rfkill")
+            .args([if enabled { "unblock" } else { "block" }, "wifi"])
+            .status();
+    }
+
+    pub fn set_bluetooth_state(&self, enabled: bool) {
+        let _ = std::process::Command::new("rfkill")
+            .args([if enabled { "unblock" } else { "block" }, "bluetooth"])
+            .status();
     }
 
     fn log_event(&self, event_type: &str, description: &str) {

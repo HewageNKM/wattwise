@@ -89,6 +89,144 @@ export const Core = ({ metrics, notify }) => {
                                     >{metrics.config?.sata_alpm ? "Disable" : "Enable"}</button>
                                 </td>
                             </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>WiFi Radio</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Hardware radio control via rfkill.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.wifi_enabled ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.wifi_enabled ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.wifi_enabled ? "ON" : "OFF"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.wifi_enabled ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_wifi_enabled", { enabled: !metrics.config?.wifi_enabled })
+                                            .then(() => notify(`WiFi ${!metrics.config?.wifi_enabled ? 'Enabled' : 'Disabled'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.wifi_enabled ? "Disable" : "Enable"}</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>Bluetooth</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Wireless radio control for peripherals.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.bluetooth_enabled ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.bluetooth_enabled ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.bluetooth_enabled ? "ON" : "OFF"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.bluetooth_enabled ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_bluetooth_enabled", { enabled: !metrics.config?.bluetooth_enabled })
+                                            .then(() => notify(`Bluetooth ${!metrics.config?.bluetooth_enabled ? 'Enabled' : 'Disabled'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.bluetooth_enabled ? "Disable" : "Enable"}</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>PCIe ASPM</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Active State Power Management for bus lines.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.pcie_aspm ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.pcie_aspm ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.pcie_aspm ? "ACTIVE" : "DISABLED"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.pcie_aspm ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_pcie_aspm", { enabled: !metrics.config?.pcie_aspm })
+                                            .then(() => notify(`PCIe ASPM ${!metrics.config?.pcie_aspm ? 'Enabled' : 'Disabled'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.pcie_aspm ? "Disable" : "Enable"}</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>NMI Watchdog</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Kernel-level hardware hang detector.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.nmi_watchdog ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.nmi_watchdog ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.nmi_watchdog ? "ENABLED" : "QUIET"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.nmi_watchdog ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_nmi_watchdog", { enabled: !metrics.config?.nmi_watchdog })
+                                            .then(() => notify(`Watchdog ${!metrics.config?.nmi_watchdog ? 'Enabled' : 'Disabled'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.nmi_watchdog ? "Disable" : "Enable"}</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>VM Writeback</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Advanced cache-to-disk flushing policy.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.vm_writeback ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.vm_writeback ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.vm_writeback ? "POWER-SAVE" : "STANDARD"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.vm_writeback ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_vm_writeback", { enabled: !metrics.config?.vm_writeback })
+                                            .then(() => notify(`WM Writeback ${!metrics.config?.vm_writeback ? 'Aggressive' : 'Standard'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.vm_writeback ? "Standard" : "Aggressive"}</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <div style={{ fontWeight: '600' }}>SMT Status</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Hyper-threading / Sequential Multi-Threading.</div>
+                                </td>
+                                <td>
+                                    <span className="status-pill" style={{ 
+                                        background: metrics.config?.smt_status ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: metrics.config?.smt_status ? 'var(--success)' : 'var(--text-secondary)'
+                                    }}>
+                                        {metrics.config?.smt_status ? "ON" : "OFF"}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button
+                                        className={metrics.config?.smt_status ? "btn-primary" : "btn-secondary"}
+                                        onClick={() => invoke("set_smt_status", { enabled: !metrics.config?.smt_status })
+                                            .then(() => notify(`SMT ${!metrics.config?.smt_status ? 'Enabled' : 'Disabled'}`))
+                                            .catch(console.error)}
+                                        style={{ padding: '6px 16px', fontSize: '11px' }}
+                                    >{metrics.config?.smt_status ? "Disable" : "Enable"}</button>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
