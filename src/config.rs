@@ -14,6 +14,8 @@ pub struct AppConfig {
     pub smt_status: bool,
     pub bluetooth_enabled: bool,
     pub wifi_enabled: bool,
+    pub charge_threshold: u32,
+    pub thermal_smoothing: bool,
 }
 
 impl Default for AppConfig {
@@ -29,6 +31,8 @@ impl Default for AppConfig {
             smt_status: true,
             bluetooth_enabled: true,
             wifi_enabled: true,
+            charge_threshold: 80,
+            thermal_smoothing: true,
         }
     }
 }

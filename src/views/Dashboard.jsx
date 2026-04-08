@@ -61,7 +61,14 @@ export const Dashboard = ({ metrics }) => {
              </div>
              <div className="mini-stat">
                 <span className="label">Thermal Vitals</span>
-                <span className="val" style={{ color: cpuTemp > 70 ? 'var(--thermal-hot)' : 'var(--text-main)' }}>{cpuTemp ? `${cpuTemp.toFixed(1)}°C` : 'N/A'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="val" style={{ color: cpuTemp > 70 ? 'var(--thermal-hot)' : 'var(--text-main)' }}>{cpuTemp ? `${cpuTemp.toFixed(1)}°C` : 'N/A'}</span>
+                  {metrics.throttling_level > 0 && (
+                    <span style={{ fontSize: '10px', color: 'var(--thermal-hot)', fontWeight: '800', border: '1px solid var(--thermal-hot)', padding: '1px 4px', borderRadius: '4px' }}>
+                      THROTTLE {Math.round(metrics.throttling_level)}%
+                    </span>
+                  )}
+                </div>
              </div>
              <div className="mini-stat">
                 <span className="label">System Cycle</span>
@@ -92,12 +99,17 @@ export const Dashboard = ({ metrics }) => {
               </div>
             </div>
             <div className="stat-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="label" style={{ fontSize: '10px' }}>Power Source</div>
-              <div style={{ fontSize: '18px', fontWeight: '800', color: metrics.is_on_ac ? 'var(--brand-accent)' : 'var(--energy-amber)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="label" style={{ fontSize: '10px' }}>Power Source & Health</div>
+              <div style={{ fontSize: '18px', fontWeight: '800', color: metrics.is_on_ac ? 'var(--brand-accent)' : 'var(--energy-amber)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 {metrics.is_on_ac ? '🔌 AC POWER' : '🔋 BATTERY'}
                 {metrics.battery_level !== undefined && metrics.battery_level !== null && (
                   <span style={{ fontSize: '14px', color: 'var(--text-secondary)', fontWeight: '600' }}>
                     ({metrics.battery_level}%)
+                  </span>
+                )}
+                {metrics.config?.charge_threshold < 100 && (
+                  <span style={{ fontSize: '10px', background: 'rgba(0, 255, 136, 0.1)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                    GUARD: {metrics.config.charge_threshold}%
                   </span>
                 )}
               </div>

@@ -5,7 +5,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const LOW_LOAD_THRESHOLD_TICKS: usize = 12; 
-const THERMAL_CUTOFF_CELSIUS: f32 = 72.0; 
+const THERMAL_MIN_CELSIUS: f32 = 65.0; 
+const THERMAL_MAX_CELSIUS: f32 = 85.0;
 const CORE_MINIMUM: usize = 2;              
 const TURBO_SUSTAIN_SEC: u64 = 15;           
 
@@ -25,6 +26,8 @@ pub struct PowerManager {
     prev_sata_state: std::sync::atomic::AtomicBool,
     prev_wifi_state: std::sync::atomic::AtomicBool,
     prev_bluetooth_state: std::sync::atomic::AtomicBool,
+    burst_ticks: AtomicUsize,
+    prev_load: AtomicU32,
 }
 
 impl PowerManager {
@@ -51,6 +54,8 @@ impl PowerManager {
             prev_sata_state: std::sync::atomic::AtomicBool::new(false),
             prev_wifi_state: std::sync::atomic::AtomicBool::new(true),
             prev_bluetooth_state: std::sync::atomic::AtomicBool::new(true),
+            burst_ticks: AtomicUsize::new(0),
+            prev_load: AtomicU32::new(0),
         };
         pm.park_cores_safe(cores); // Force unpark on boot
         pm
@@ -152,6 +157,22 @@ impl PowerManager {
             }
         };
 
+        let current_load = metrics.total_cpu_usage;
+        let prev_load = self.prev_load.swap(current_load as u32, Ordering::SeqCst);
+        let load_jump = current_load - prev_load as f32;
+        
+        if load_jump > 20.0 {
+            self.log_event("BURST_DETECTED", &format!("Significant load spike (+{:.1}%). Fast-tracking unpark.", load_jump));
+            force_all_cores = true;
+            self.burst_ticks.store(2, Ordering::SeqCst);
+        } else {
+            let bt = self.burst_ticks.load(Ordering::SeqCst);
+            if bt > 0 {
+                force_all_cores = true;
+                self.burst_ticks.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+
         let ideal_cores = if force_all_cores {
             self.total_cores
         } else {
@@ -181,22 +202,51 @@ impl PowerManager {
             self.park_cores_safe(final_core_target);
         }
 
-        let state_json = format!("{{\"unpark_count\": {}, \"tier\": \"{:?}\"}}", final_core_target, target_tier);
-        let _ = std::fs::write("/run/wattwise.state", state_json);
+        // --- 5. Thermal Smoothing (PID-Lite) ---
+        let mut throttling_level = 0.0;
+        let mut target_max_perf = 100;
+        let config = &metrics.config;
+        
+        if config.thermal_smoothing {
+            if cpu_temp >= THERMAL_MIN_CELSIUS {
+                // Linear ramp from 65°C (100%) to 85°C (50%)
+                let range = THERMAL_MAX_CELSIUS - THERMAL_MIN_CELSIUS;
+                let excess = (cpu_temp - THERMAL_MIN_CELSIUS).max(0.0);
+                let throttle_factor = (excess / range).min(1.0);
+                
+                throttling_level = throttle_factor * 100.0;
+                target_max_perf = (100.0 - (throttle_factor * 50.0)) as u32;
+                
+                if throttling_level > 5.0 {
+                    self.log_event("THERMAL_SMOOTHING", &format!("Temp {:.1}°C: Smoothing performance to {}%.", cpu_temp, target_max_perf));
+                }
 
-        // --- 5. Thermal & Advanced Tuning ---
-        // Thermal Cutoff for Turbo
-        if cpu_temp >= THERMAL_CUTOFF_CELSIUS {
-            self.log_event("THERMAL_TRIP", &format!("CPU Temperature critical ({}°C). Disabling Turbo boost components.", cpu_temp));
-            let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/no_turbo", "1");
-            let _ = self.safe_write("/sys/devices/system/cpu/cpufreq/boost", "0");
-            if cpu_temp >= THERMAL_CUTOFF_CELSIUS + 5.0 {
-                self.log_event("THERMAL_EMERGENCY", &format!("Critical overheat detected ({}°C). Throttling CPU heavily.", cpu_temp));
+                if cpu_temp >= THERMAL_MAX_CELSIUS {
+                    self.log_event("THERMAL_LOCK", &format!("Critical Heat ({:.1}°C): Performance restricted to hardware floor.", cpu_temp));
+                }
+            }
+        } else {
+            // Legacy hard-cutoff logic if smoothing is disabled
+            if cpu_temp >= 75.0 {
+                target_max_perf = 60;
+                throttling_level = 40.0;
             }
         }
 
+        // Apply thermal limits
+        let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/max_perf_pct", &target_max_perf.to_string());
+        if target_max_perf < 100 {
+            let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/no_turbo", "1");
+            let _ = self.safe_write("/sys/devices/system/cpu/cpufreq/boost", "0");
+        }
+
+        let state_json = format!(
+            "{{\"unpark_count\": {}, \"tier\": \"{:?}\", \"max_perf_pct\": {}, \"throttling_level\": {:.1}}}", 
+            final_core_target, target_tier, target_max_perf, throttling_level
+        );
+        let _ = std::fs::write("/run/wattwise.state", state_json);
+
         // --- 5. Advanced Hardware Tuning ---
-        let config = &metrics.config;
 
         if apply_eco_caps {
             // Apply Power-Saving Caps
@@ -233,7 +283,7 @@ impl PowerManager {
             }
         } else {
             // Restore Performance States (or if on AC)
-            if metrics.is_on_ac || cpu_temp < THERMAL_CUTOFF_CELSIUS - 5.0 {
+            if metrics.is_on_ac || cpu_temp < THERMAL_MIN_CELSIUS - 5.0 {
                 self.set_pcie_aspm(if metrics.is_on_ac { "performance" } else { "powersave" });
                 self.set_nmi_watchdog(true);
                 self.set_vm_writeback(1500); 
@@ -470,6 +520,29 @@ impl PowerManager {
         let _ = std::process::Command::new("rfkill")
             .args([if enabled { "unblock" } else { "block" }, "bluetooth"])
             .status();
+    }
+
+    pub fn apply_charge_threshold(&self, limit: u32) {
+        // Multi-vendor detection for battery charge thresholds
+        let threshold_paths = [
+            "/sys/class/power_supply/BAT0/charge_control_end_threshold",      // Newer ASUS/Lenovo
+            "/sys/class/power_supply/BAT1/charge_control_end_threshold",
+            "/sys/class/power_supply/BAT0/charge_stop_threshold",             // ThinkPad
+            "/sys/devices/platform/asus-nb-wmi/charge_control_end_threshold", // Specific ASUS
+            "/sys/devices/platform/samsung/battery_life_extender",            // Samsung (often 0/1)
+        ];
+
+        let mut applied = false;
+        for path in threshold_paths {
+            if Path::new(path).exists() {
+                let _ = self.safe_write(path, &limit.to_string());
+                applied = true;
+            }
+        }
+
+        if applied {
+            self.log_event("BATTERY_HEALTH", &format!("Applied battery charge threshold: {}%.", limit));
+        }
     }
 
     fn log_event(&self, event_type: &str, description: &str) {

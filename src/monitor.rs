@@ -44,6 +44,7 @@ pub struct SystemMetrics {
     pub config: AppConfig,
     pub daemon_unpark_count: Option<u32>,
     pub daemon_max_perf_pct: Option<u32>,
+    pub throttling_level: Option<f32>,
     pub daemon_tier: Option<String>,
     pub is_on_ac: bool,
     pub battery_level: Option<u32>,
@@ -223,6 +224,7 @@ impl Monitor {
             config,
             daemon_unpark_count: self.read_state("unpark_count"),
             daemon_max_perf_pct: self.read_state("max_perf_pct"),
+            throttling_level: self.read_state_f32("throttling_level"),
             daemon_tier: self.read_state_str("tier"),
             is_on_ac: self.check_ac_power(),
             battery_level: self.get_battery_level(),
@@ -414,6 +416,15 @@ impl Monitor {
         std::fs::read_to_string("/run/wattwise.state").ok()
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
             .and_then(|v| v.get(key).and_then(|k| k.as_u64()).map(|u| u as u32))
+    }
+
+    fn read_state_f32(&self, key: &str) -> Option<f32> {
+        if let Ok(content) = std::fs::read_to_string("/run/wattwise.state") {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                return json.get(key).and_then(|v| v.as_f64()).map(|v| v as f32);
+            }
+        }
+        None
     }
 
     fn read_state_str(&self, key: &str) -> Option<String> {

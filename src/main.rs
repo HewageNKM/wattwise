@@ -96,6 +96,20 @@ fn set_smt_status(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_charge_threshold(limit: u32) -> Result<(), String> {
+    let mut config = AppConfig::load();
+    config.charge_threshold = limit;
+    config.save()
+}
+
+#[tauri::command]
+fn set_thermal_smoothing(enabled: bool) -> Result<(), String> {
+    let mut config = AppConfig::load();
+    config.thermal_smoothing = enabled;
+    config.save()
+}
+
+#[tauri::command]
 fn set_bluetooth_enabled(enabled: bool) -> Result<(), String> {
     let mut config = AppConfig::load();
     config.bluetooth_enabled = enabled;
@@ -150,7 +164,9 @@ fn main() {
             set_laptop_mode,
             set_smt_status,
             set_bluetooth_enabled,
-            set_wifi_enabled
+            set_wifi_enabled,
+            set_charge_threshold,
+            set_thermal_smoothing
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -167,7 +183,8 @@ fn main() {
                     let state: State<AppState> = app_handle.state();
                     let interval = state.power_manager.handle_state_change(&metrics);
 
-
+                    // Re-apply charge threshold periodically or on change (via config read)
+                    state.power_manager.apply_charge_threshold(metrics.config.charge_threshold);
 
                     if let Some(temp) = metrics.cpu_temperature {
                         if temp >= 85.0 {

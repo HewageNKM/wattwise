@@ -232,6 +232,55 @@ export const Core = ({ metrics, notify }) => {
                 </div>
 
                 <div className="glass-card" style={{ marginTop: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                        <div className="label">System Longevity & Health</div>
+                        <span className="status-pill" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'rgb(56, 189, 248)' }}>Battery & Thermal Protection</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                <div>
+                                    <div style={{ fontWeight: '600' }}>Battery Charge Threshold</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Limit charging to extend battery lifespan. Recommended: 80%.</div>
+                                </div>
+                                <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--brand-accent)' }}>{metrics.config?.charge_threshold || 80}%</div>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="60" 
+                                max="100" 
+                                step="10" 
+                                value={metrics.config?.charge_threshold || 80}
+                                onChange={(e) => invoke("set_charge_threshold", { limit: parseInt(e.target.value) })
+                                    .then(() => notify(`Charge limit set to ${e.target.value}%`))
+                                    .catch(console.error)}
+                                style={{ width: '100%', accentColor: 'var(--brand-accent)' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                <span>60% (Max Longevity)</span>
+                                <span>80% (Balanced)</span>
+                                <span>100% (Full Capacity)</span>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                            <div>
+                                <div style={{ fontWeight: '600' }}>Intelligent Thermal Smoothing</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Predictive PID-lite ramp prevents sudden frequency drops.</div>
+                            </div>
+                            <button
+                                className={metrics.config?.thermal_smoothing ? "btn-primary" : "btn-secondary"}
+                                onClick={() => invoke("set_thermal_smoothing", { enabled: !metrics.config?.thermal_smoothing })
+                                    .then(() => notify(`Thermal Smoothing ${!metrics.config?.thermal_smoothing ? 'Active' : 'Disabled'}`))
+                                    .catch(console.error)}
+                                style={{ padding: '8px 20px' }}
+                            >{metrics.config?.thermal_smoothing ? "ENABLED" : "ENABLE"}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="glass-card" style={{ marginTop: '24px' }}>
                     <div className="label">Micro-Architecture SMT Topology</div>
                     <div style={{ 
                         marginTop: '20px', 
