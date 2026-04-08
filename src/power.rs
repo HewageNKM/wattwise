@@ -187,8 +187,7 @@ impl PowerManager {
             let _ = self.safe_write("/sys/devices/system/cpu/intel_pstate/no_turbo", "1");
             let _ = self.safe_write("/sys/devices/system/cpu/cpufreq/boost", "0");
             if cpu_temp >= THERMAL_CUTOFF_CELSIUS + 5.0 {
-                self.log_event("THERMAL_EMERGENCY", &format!("Critical overheat detected ({}°C). Forcing emergency Eco-Caps.", cpu_temp));
-                apply_eco_caps = true;
+                self.log_event("THERMAL_EMERGENCY", &format!("Critical overheat detected ({}°C). Throttling CPU heavily.", cpu_temp));
             }
         }
 
